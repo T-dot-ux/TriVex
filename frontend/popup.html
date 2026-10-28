@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TriVex</title>
+  <link rel="stylesheet" href="styles/popup.css">
+</head>
+<body>
+  <main class="container">
+    <h1>TriVex</h1>
+    <p class="subtitle">Explainable URL risk analysis</p>
+    <label for="urlInput">Enter a URL to analyze</label>
+    <input id="urlInput" type="url" placeholder="https://example.com" autocomplete="url">
+    <button id="analyzeButton" type="button">Analyze URL</button>
+    <p id="status" role="status">Starter scaffold — detector not implemented yet.</p>
+    <section id="results" aria-live="polite"></section>
+  </main>
+  <script src="scripts/popup.js"></script>
+</body>
+</html>

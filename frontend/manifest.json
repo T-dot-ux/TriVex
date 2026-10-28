@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "TriVex",
+  "version": "0.1.0",
+  "description": "Explainable, local-first phishing URL analysis.",
+  "action": { "default_title": "Analyze URL", "default_popup": "popup.html" },
+  "permissions": [],
+  "minimum_chrome_version": "111"
+}
