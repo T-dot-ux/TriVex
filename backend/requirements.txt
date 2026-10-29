@@ -1,2 +1,10 @@
-pandas>=2.2,<4.0
-scikit-learn>=1.5,<2.0
+# TriVex Python evaluation dependencies
+# Python 3.9+
+#
+# The core evaluation pipeline (trivex_detector.py + evaluate.py) uses only
+# the Python standard library (re, csv, json, dataclasses, urllib.parse,
+# pathlib, sys, datetime).  No third-party packages are required.
+#
+# Optional extras for extended analysis / notebooks:
+# pandas>=2.2,<4.0
+# scikit-learn>=1.5,<2.0

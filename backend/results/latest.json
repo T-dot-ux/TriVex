@@ -1,0 +1,55 @@
+{
+  "run_date": "20261029T115533Z",
+  "dataset_path": "C:\\Users\\Dell\\Documents\\TriVex_GitHub_Starter\\TriVex\\backend\\data\\dataset.csv",
+  "record_count": 60,
+  "systems": {
+    "System A (Rule-based)": {
+      "confusion_matrix": {
+        "tp": 30,
+        "fp": 0,
+        "tn": 30,
+        "fn": 0
+      },
+      "metrics": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "false_positive_rate": 0.0
+      },
+      "errors": []
+    },
+    "System B (Weighted)": {
+      "confusion_matrix": {
+        "tp": 30,
+        "fp": 0,
+        "tn": 30,
+        "fn": 0
+      },
+      "metrics": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "false_positive_rate": 0.0
+      },
+      "errors": []
+    },
+    "System C (Hybrid)": {
+      "confusion_matrix": {
+        "tp": 30,
+        "fp": 0,
+        "tn": 30,
+        "fn": 0
+      },
+      "metrics": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "false_positive_rate": 0.0
+      },
+      "errors": []
+    }
+  }
+}

@@ -5,6 +5,7 @@ This directory will contain the Chrome Extension Manifest V3 popup and local URL
 Planned files:
 - `manifest.json` — extension configuration and minimal permissions.
 - `popup.html` — user interface.
+- `icons/icons/` — extension icons.
 - `styles/popup.css` — styling.
 - `scripts/popup.js` — popup interactions.
 - `scripts/detector.js` — URL feature extraction and detection methods.

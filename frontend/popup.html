@@ -1,21 +1,182 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>TriVex</title>
-  <link rel="stylesheet" href="styles/popup.css">
+  <link rel="stylesheet" href="styles/popup.css" />
+  <style>
+    /* Family Shield toggle additions */
+    .family-shield-section {
+      margin: 0 16px 12px;
+      padding: 10px 14px;
+      background: rgba(39, 174, 96, 0.08);
+      border: 1px solid rgba(39, 174, 96, 0.3);
+      border-radius: 8px;
+    }
+    .family-shield-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .family-shield-label {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #27ae60;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .family-shield-sub {
+      font-size: 0.76rem;
+      color: #7f8c8d;
+      margin-top: 3px;
+    }
+    /* Toggle switch */
+    .toggle-switch {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+      position: absolute;
+    }
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      background: #ccc;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toggle-switch input:checked + .toggle-track {
+      background: #27ae60;
+    }
+    .toggle-track::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .toggle-switch input:checked + .toggle-track::after {
+      transform: translateX(16px);
+    }
+    /* Shield badge in header */
+    .shield-badge {
+      display: none;
+      font-size: 0.7rem;
+      background: #27ae60;
+      color: #fff;
+      padding: 1px 7px;
+      border-radius: 99px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      margin-left: 4px;
+      vertical-align: middle;
+    }
+    .shield-badge.active { display: inline; }
+  </style>
 </head>
 <body>
-  <main class="container">
-    <h1>TriVex</h1>
-    <p class="subtitle">Explainable URL risk analysis</p>
-    <label for="urlInput">Enter a URL to analyze</label>
-    <input id="urlInput" type="url" placeholder="https://example.com" autocomplete="url">
-    <button id="analyzeButton" type="button">Analyze URL</button>
-    <p id="status" role="status">Starter scaffold — detector not implemented yet.</p>
-    <section id="results" aria-live="polite"></section>
-  </main>
+  <header class="header">
+    <img src="icons/icon32.png" alt="" width="28" height="28" />
+    <div>
+      <h1>TriVex <span class="shield-badge" id="shieldBadge">🛡️ ON</span></h1>
+      <p class="subtitle">Explainable URL check. Runs locally, never visits the URL.</p>
+    </div>
+  </header>
+
+  <section class="card">
+    <button id="scanTab" class="btn primary" type="button">Analyze current page</button>
+    <div class="divider"><span>or</span></div>
+    <label for="urlInput" class="label">Paste a URL</label>
+    <div class="row">
+      <input id="urlInput" type="text" spellcheck="false" autocomplete="off"
+             placeholder="https://example.com/login" />
+      <button id="scanUrl" class="btn" type="button">Analyze URL</button>
+    </div>
+    <p id="error" class="error" role="alert" hidden></p>
+  </section>
+
+  <section id="results" hidden>
+    <div class="analyzed">
+      <span class="muted">Analyzed:</span>
+      <code id="analyzedUrl"></code>
+    </div>
+
+    <div id="disagreement" class="banner" hidden></div>
+
+    <div class="detector" id="cardA">
+      <div class="detector-head">
+        <span class="detector-name">System A &middot; Rule-based</span>
+        <span class="pill" id="verdictA"></span>
+      </div>
+      <ul class="reasons" id="reasonsA"></ul>
+    </div>
+
+    <div class="detector" id="cardB">
+      <div class="detector-head">
+        <span class="detector-name">System B &middot; Weighted score</span>
+        <span class="pill" id="verdictB"></span>
+      </div>
+      <div class="meter" aria-hidden="true">
+        <div class="meter-fill" id="meterFill"></div>
+        <div class="meter-mark" id="meterMark"></div>
+      </div>
+      <p class="score-line"><strong id="scoreText"></strong> <span class="muted">(flagged at 45 or more, max 120)</span></p>
+      <ul class="reasons" id="reasonsB"></ul>
+    </div>
+
+    <div class="detector" id="cardC">
+      <div class="detector-head">
+        <span class="detector-name">System C &middot; Hybrid</span>
+        <span class="pill" id="verdictC"></span>
+      </div>
+      <ul class="reasons" id="reasonsC"></ul>
+    </div>
+
+    <details class="detector features">
+      <summary>All six features</summary>
+      <ul id="featureList" class="featurelist"></ul>
+    </details>
+
+    <p id="explanation" class="explanation"></p>
+  </section>
+
+  <!-- Family Shield section (Phase 9) -->
+  <section class="family-shield-section" id="familyShieldSection">
+    <div class="family-shield-row">
+      <div>
+        <div class="family-shield-label">
+          🛡️ Family Shield
+        </div>
+        <div class="family-shield-sub">Block adult content and high-risk phishing</div>
+      </div>
+      <label class="toggle-switch" aria-label="Enable Family Shield">
+        <input type="checkbox" id="familyShieldToggle" />
+        <span class="toggle-track"></span>
+      </label>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <strong>Not flagged does not mean verified safe.</strong>
+    URL-only checks can miss clean-looking phishing links and can warn on legitimate ones.
+    Always check the site yourself.
+  </footer>
+
+  <script src="scripts/detector.js"></script>
+  <script src="scripts/family_shield.js"></script>
   <script src="scripts/popup.js"></script>
 </body>
 </html>

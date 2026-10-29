@@ -2,8 +2,38 @@
   "manifest_version": 3,
   "name": "TriVex",
   "version": "0.1.0",
-  "description": "Explainable, local-first phishing URL analysis.",
-  "action": { "default_title": "Analyze URL", "default_popup": "popup.html" },
-  "permissions": [],
-  "minimum_chrome_version": "111"
+  "description": "Explainable phishing-URL checker. Analyzes URL text locally and never visits or fetches the URL.",
+  "permissions": ["activeTab", "tabs", "storage", "declarativeNetRequest"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "action": {
+    "default_title": "TriVex",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "scripts/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["scripts/content.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["block.html", "family_shield.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

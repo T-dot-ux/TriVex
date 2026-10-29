@@ -1,0 +1,119 @@
+
+erDiagram
+    PROTECTION_PROFILE ||--|| PROTECTION_POLICY : configures
+    PROTECTION_POLICY ||--o{ BLOCK_EVENT : governs
+    PROTECTION_POLICY ||--o{ SAFE_RESOURCE : approves
+
+    URL_ANALYSIS ||--|| URL_FEATURES : extracts
+    URL_ANALYSIS ||--|{ DETECTOR_RESULT : evaluated_by
+    URL_ANALYSIS ||--o{ PAGE_OBSERVATION : monitors
+    PAGE_OBSERVATION ||--o{ CONTENT_CLASSIFICATION : produces
+    URL_ANALYSIS ||--o{ BLOCK_EVENT : may_trigger
+
+    EVALUATION_RUN ||--|{ DATASET_RECORD : evaluates
+    EVALUATION_RUN ||--|{ EVALUATION_METRIC : reports
+    DATASET_RECORD ||--o{ DETECTOR_RESULT : benchmarked_by
+
+    PROTECTION_PROFILE {
+        string profile_id PK
+        string protection_level
+        boolean family_shield_enabled
+        datetime updated_at
+    }
+
+    PROTECTION_POLICY {
+        string policy_id PK
+        boolean block_adult_content
+        boolean block_high_risk_phishing
+        boolean monitor_pages
+        string redirect_mode
+        string uncertainty_action
+    }
+
+    URL_ANALYSIS {
+        string analysis_id PK
+        string input_url
+        string hostname
+        datetime analyzed_at
+        string final_verdict
+        string analysis_status
+    }
+
+    URL_FEATURES {
+        string feature_id PK
+        string analysis_id FK
+        boolean hostname_is_ip
+        boolean suspicious_symbols
+        int hostname_dot_count
+        boolean keyword_match
+        int url_length
+        boolean uses_https
+    }
+
+    DETECTOR_RESULT {
+        string result_id PK
+        string analysis_id FK
+        string detector_name
+        int risk_score
+        string verdict
+        string triggered_reasons
+    }
+
+    PAGE_OBSERVATION {
+        string observation_id PK
+        string analysis_id FK
+        datetime observed_at
+        string observation_type
+        string evidence_summary
+    }
+
+    CONTENT_CLASSIFICATION {
+        string classification_id PK
+        string observation_id FK
+        string category
+        string confidence_level
+        string evidence_summary
+    }
+
+    BLOCK_EVENT {
+        string block_id PK
+        string analysis_id FK
+        string policy_id FK
+        string block_reason
+        string local_page
+        datetime blocked_at
+    }
+
+    SAFE_RESOURCE {
+        string resource_id PK
+        string policy_id FK
+        string title
+        string destination_url
+        string resource_category
+        boolean approved
+    }
+
+    EVALUATION_RUN {
+        string run_id PK
+        datetime run_date
+        string dataset_version
+        string model_version
+    }
+
+    DATASET_RECORD {
+        string record_id PK
+        string run_id FK
+        string url_reference
+        string true_label
+    }
+
+    EVALUATION_METRIC {
+        string metric_id PK
+        string run_id FK
+        string detector_name
+        float accuracy
+        float precision
+        float recall
+        float f1_score
+        float false_positive_rate
+    }
