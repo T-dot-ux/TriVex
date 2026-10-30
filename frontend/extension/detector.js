@@ -115,8 +115,10 @@
     var disagree = a.verdict !== b.verdict;
     if (disagree) {
       reasons.push(
-        "Detectors disagree: rule-based says " + a.verdict +
-          ", weighted score says " + b.verdict
+        "Detectors disagree: rule-based says " +
+          (a.verdict === "phishing" ? "suspicious" : "no high-risk indicators") +
+          ", weighted score says " +
+          (b.verdict === "phishing" ? "suspicious" : "no high-risk indicators")
       );
     }
     return { verdict: verdict, reasons: reasons, disagreement: disagree };
