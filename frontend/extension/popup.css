@@ -40,11 +40,23 @@ body {
   background: var(--bg);
   color: var(--text);
   font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  overflow-wrap: anywhere;
+}
+
+p { margin: 0; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .header { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
 .header h1 { font-size: 16px; margin: 0; }
-.subtitle { margin: 0; color: var(--muted); font-size: 12px; }
+.subtitle { color: var(--muted); font-size: 12px; }
 
 .card, .detector {
   background: var(--surface);
@@ -64,7 +76,8 @@ body {
   cursor: pointer;
 }
 .btn:hover { border-color: var(--accent); }
-.btn:focus-visible, input:focus-visible, summary:focus-visible {
+.btn:focus-visible, input:focus-visible, summary:focus-visible,
+.linkbtn:focus-visible, .footer a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -86,9 +99,9 @@ body {
 }
 
 .label { display: block; margin-bottom: 4px; color: var(--muted); font-size: 12px; }
-.row { display: flex; gap: 6px; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; }
 input[type="text"] {
-  flex: 1; min-width: 0;
+  flex: 1 1 160px; min-width: 0;
   font: inherit;
   padding: 8px 10px;
   border-radius: 8px;
@@ -97,11 +110,48 @@ input[type="text"] {
   color: var(--text);
 }
 
-.error { color: var(--warn-text); margin: 8px 0 0; }
+.error { color: var(--warn-text); margin-top: 8px; font-weight: 600; }
 
-.analyzed { margin-bottom: 8px; word-break: break-all; }
-.analyzed code { font-size: 12px; }
+/* Initial / analysing / unavailable */
+.state {
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+.state-title { font-weight: 600; }
+.state-text { color: var(--muted); margin-top: 2px; }
+.state.state-unavailable { border: 1px solid var(--warn-text); }
+.state.state-unavailable .state-title { color: var(--warn-text); }
+
+/* Overall result headline: icon + text, never color alone */
+.headline {
+  display: flex; gap: 10px; align-items: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.headline.suspicious { background: var(--warn-bg); color: var(--warn-text); border-color: var(--warn-text); }
+.headline.none { background: var(--ok-bg); color: var(--ok-text); }
+.headline.disagree { background: var(--note-bg); color: var(--note-text); border-color: var(--note-text); }
+.h-icon { font-size: 20px; line-height: 1.2; }
+.h-title { font-weight: 700; font-size: 14px; }
+.h-sub { font-size: 12.5px; }
+.h-sub:empty { display: none; }
+
+.analyzed { margin-bottom: 8px; }
+.analyzed code { font-size: 12px; display: block; margin-top: 2px; }
 .muted { color: var(--muted); }
+
+.linkbtn {
+  background: none; border: 0; padding: 0;
+  color: var(--accent);
+  font: inherit; font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
 
 .banner {
   background: var(--note-bg);
@@ -135,16 +185,22 @@ input[type="text"] {
 .meter-fill { height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
 .meter-fill.over { background: var(--warn-text); }
 .meter-mark { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--text); opacity: 0.5; left: 37.5%; }
-.score-line { margin: 6px 0 0; }
+.score-line { margin-top: 6px; }
+@media (prefers-reduced-motion: reduce) {
+  .meter-fill { transition: none; }
+}
 
 .features summary { cursor: pointer; font-weight: 600; }
 .featurelist { list-style: none; margin: 8px 0 0; padding: 0; }
-.featurelist li { display: flex; justify-content: space-between; padding: 3px 0; border-top: 1px solid var(--border); }
+.featurelist li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-top: 1px solid var(--border); }
 .featurelist li:first-child { border-top: 0; }
 .yes { color: var(--warn-text); font-weight: 600; }
 .no { color: var(--muted); }
 
-.explanation { margin: 0 0 10px; }
+.next h2 { font-size: 13px; margin: 0; }
+.next .reasons { margin-top: 4px; }
+
+.explanation { margin: 0 0 10px; color: var(--muted); }
 
 .footer {
   font-size: 11.5px;
@@ -153,3 +209,10 @@ input[type="text"] {
   padding-top: 10px;
 }
 .footer strong { color: var(--text); }
+.footer a { color: var(--accent); }
+
+@media (max-width: 360px) {
+  body { padding: 10px; }
+  .row { flex-direction: column; }
+  .row .btn, .row input { width: 100%; flex: none; }
+}
