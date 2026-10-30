@@ -21,16 +21,35 @@
     <label for="urlInput" class="label">Paste a URL</label>
     <div class="row">
       <input id="urlInput" type="text" spellcheck="false" autocomplete="off"
-             placeholder="https://example.com/login" />
+             placeholder="https://example.com/login" aria-describedby="error" />
       <button id="scanUrl" class="btn" type="button">Analyze URL</button>
     </div>
     <p id="error" class="error" role="alert" hidden></p>
   </section>
 
+  <!-- Spoken summary for screen readers; updated by popup.js -->
+  <div id="announce" class="sr-only" aria-live="polite"></div>
+
+  <!-- Initial / analysing / analysis-unavailable states -->
+  <section id="statusBox" class="state" hidden>
+    <p id="statusTitle" class="state-title"></p>
+    <p id="statusText" class="state-text"></p>
+  </section>
+
   <section id="results" hidden>
+    <div id="headline" class="headline">
+      <span id="hIcon" class="h-icon" aria-hidden="true"></span>
+      <div>
+        <p id="hTitle" class="h-title"></p>
+        <p id="hSub" class="h-sub"></p>
+      </div>
+    </div>
+
     <div class="analyzed">
       <span class="muted">Analyzed:</span>
+      <strong id="hostName"></strong>
       <code id="analyzedUrl"></code>
+      <button id="toggleUrl" class="linkbtn" type="button" aria-expanded="false" hidden>Show full URL</button>
     </div>
 
     <div id="disagreement" class="banner" hidden></div>
@@ -52,7 +71,7 @@
         <div class="meter-fill" id="meterFill"></div>
         <div class="meter-mark" id="meterMark"></div>
       </div>
-      <p class="score-line"><strong id="scoreText"></strong> <span class="muted">(flagged at 45 or more, max 120)</span></p>
+      <p class="score-line"><strong id="scoreText"></strong> <span class="muted" id="scoreNote"></span></p>
       <ul class="reasons" id="reasonsB"></ul>
     </div>
 
@@ -69,13 +88,19 @@
       <ul id="featureList" class="featurelist"></ul>
     </details>
 
+    <div class="detector next">
+      <h2>Recommended next steps</h2>
+      <ul id="nextSteps" class="reasons"></ul>
+    </div>
+
     <p id="explanation" class="explanation"></p>
   </section>
 
   <footer class="footer">
-    <strong>Not flagged does not mean verified safe.</strong>
+    <strong>"No high-risk indicators detected" does not mean verified safe.</strong>
     URL-only checks can miss clean-looking phishing links and can warn on legitimate ones.
     Always check the site yourself.
+    <a href="privacy.html" target="_blank" rel="noopener">Privacy information</a>
   </footer>
 
   <script src="detector.js"></script>
