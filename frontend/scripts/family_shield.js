@@ -198,6 +198,11 @@
   var api = { classifyUrl: classifyUrl };
 
   root.FamilyShield = api;
+  root.classifyUrl = classifyUrl;
+  if (typeof window !== "undefined") {
+    window.FamilyShield = api;
+    window.classifyUrl = classifyUrl;
+  }
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 
 })(typeof self !== "undefined" ? self : this);

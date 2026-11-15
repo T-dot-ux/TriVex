@@ -27,7 +27,11 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["scripts/content.js"],
+      "js": [
+        "scripts/detector.js",
+        "scripts/family_shield.js",
+        "scripts/content.js"
+      ],
       "run_at": "document_start"
     }
   ],

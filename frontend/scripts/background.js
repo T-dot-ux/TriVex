@@ -70,11 +70,15 @@ function shouldSkip(url) {
   if (
     lower.startsWith("chrome://") ||
     lower.startsWith("chrome-extension://") ||
+    lower.startsWith("extension://") ||
     lower.startsWith("about:") ||
     lower.startsWith("data:") ||
     lower.startsWith("javascript:") ||
     lower.startsWith("edge://") ||
-    lower.startsWith("brave://")
+    lower.startsWith("brave://") ||
+    lower.startsWith("opera://") ||
+    lower.startsWith("devtools://") ||
+    lower.startsWith("view-source:")
   ) {
     return true;
   }
@@ -233,6 +237,16 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
   if (!message || typeof message !== "object") return false;
 
   switch (message.type) {
+    case "PAGE_BLOCKED": {
+      if (sender.tab && sender.tab.id) {
+        var isFS = message.blockType === "family_shield";
+        lastRedirectedUrl[sender.tab.id] = message.url;
+        updateBadge(sender.tab.id, "phishing", isFS);
+      }
+      sendResponse({ ok: true });
+      return false;
+    }
+
     case "NAVIGATED_URL": {
       var navUrl = message.url || "";
       if (!navUrl || shouldSkip(navUrl)) {
