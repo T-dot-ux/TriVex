@@ -196,46 +196,99 @@
   /* ------------------------------------------------------------------ */
 
   /**
-   * Hybrid decision:
-   *   1. Run A and B independently.
-   *   2. If System A flags → final verdict is "phishing".
-   *   3. Otherwise → adopt System B's verdict.
-   *   4. Record disagreement when A.verdict !== B.verdict.
-   *   5. Collect all triggered reasons from both systems.
+   * Hybrid decision engine:
+   *   1. Runs System A and System B independently.
+   *   2. Flags high-confidence "phishing" if:
+   *      - Weighted risk score >= THRESHOLD (45+), OR
+   *      - Critical high-confidence rule fires: IP hostname, '@' user-info,
+   *        or phishing keyword combined with plain HTTP.
+   *   3. Classifies as "suspicious" (caution / review needed) if:
+   *      - System A flagged a single moderate/weak rule (e.g. length > 75 or >3 dots)
+   *        while System B score is low, preventing false-positive hard blocking.
+   *      - Or System B has a moderate cumulative score (30 <= score < 45).
+   *   4. Classifies as "not_flagged" (low risk) if neither system flagged.
+   *   5. Explicitly records disagreement and uncertainty.
    *
-   * @param {object} f      Feature object.
+   * @param {object} f      Feature object from extractFeatures().
+   * @param {string} rawUrl Full input URL string.
    * @param {object} sysA   System A result.
    * @param {object} sysB   System B result.
-   * @returns {{ verdict, reasons, disagreement }}
+   * @returns {{ verdict: string, riskLevel: string, riskScore: number, reasons: string[], disagreement: boolean }}
    */
-  function runSystemC(f, sysA, sysB) {
-    var verdict;
+  function runSystemC(f, rawUrl, sysA, sysB) {
     var reasons = [];
+    var verdict;
+    var riskLevel;
+    var urlStr = typeof rawUrl === "string" ? rawUrl : "";
+
+    var hasIp = !!f.hostname_is_ip;
+    var hasAt = urlStr.indexOf("@") !== -1;
+    var hasKeywordNoHttps = !!(f.keyword_match && f.uses_https);
+    var hasScoreThreshold = sysB.score >= sysB.threshold;
+
     var disagree = sysA.verdict !== sysB.verdict;
 
-    if (sysA.verdict === "phishing") {
+    if (hasScoreThreshold || hasIp || hasAt || hasKeywordNoHttps) {
       verdict = "phishing";
-      reasons.push("System A (rule-based) flagged this URL");
-      sysA.reasons.forEach(function (r) { reasons.push("  A: " + r); });
-    } else {
-      verdict = sysB.verdict;
-      reasons.push(
-        "System A did not flag; adopting System B score (" +
-        sysB.score + "/" + sysB.threshold + " threshold)"
-      );
-      if (sysB.reasons.length) {
-        sysB.reasons.forEach(function (r) { reasons.push("  B: " + r); });
+      riskLevel = "high";
+      if (hasScoreThreshold) {
+        reasons.push("Cumulative weighted risk score (" + sysB.score + ") exceeds threshold (" + sysB.threshold + ")");
       }
+      if (hasIp) {
+        reasons.push("Critical indicator: raw IP address used as hostname");
+      }
+      if (hasAt) {
+        reasons.push("Critical indicator: '@' symbol in URL indicates user-info spoofing");
+      }
+      if (hasKeywordNoHttps) {
+        reasons.push("Critical indicator: credential/banking keyword on insecure HTTP connection");
+      }
+      sysA.reasons.forEach(function (r) {
+        var formatted = "  A: " + r;
+        if (reasons.indexOf(formatted) === -1) reasons.push(formatted);
+      });
+    } else if (sysA.verdict === "phishing") {
+      // System A flagged on a moderate rule, but cumulative score is low (< 45)
+      verdict = "suspicious";
+      riskLevel = "medium";
+      reasons.push(
+        "Moderate indicators detected (" + sysA.reasons.join(", ") +
+        "), but cumulative risk score (" + sysB.score + "/" + sysB.threshold +
+        ") is below critical threshold. Treat with caution."
+      );
+      disagree = true;
+    } else if (sysB.score >= 30) {
+      // Moderate score near threshold
+      verdict = "suspicious";
+      riskLevel = "medium";
+      reasons.push(
+        "Moderate cumulative risk score (" + sysB.score + "/" + sysB.threshold +
+        " threshold). Verify site credentials."
+      );
+      disagree = true;
+    } else {
+      verdict = "not_flagged";
+      riskLevel = "low";
+      reasons.push(
+        "No high-risk indicators detected (score " + sysB.score + "/" + sysB.threshold +
+        " threshold)."
+      );
     }
 
     if (disagree) {
       reasons.push(
         "Disagreement: System A says \"" + sysA.verdict +
-        "\" and System B says \"" + sysB.verdict + "\""
+        "\" and System B says \"" + sysB.verdict + "\"."
       );
     }
 
-    return { verdict: verdict, reasons: reasons, disagreement: disagree };
+    return {
+      verdict: verdict,
+      riskLevel: riskLevel,
+      riskScore: sysB.score,
+      reasons: reasons,
+      disagreement: disagree
+    };
   }
 
   /* ------------------------------------------------------------------ */
@@ -313,9 +366,11 @@
     var ex   = extractFeatures(raw, parsed);
     var sysA = runSystemA(ex.features);
     var sysB = runSystemB(ex.features);
-    var sysC = runSystemC(ex.features, sysA, sysB);
+    var sysC = runSystemC(ex.features, raw, sysA, sysB);
 
     var finalVerdict = sysC.verdict;
+    var riskLevel    = sysC.riskLevel;
+    var riskScore    = sysC.riskScore;
 
     var explanation;
     var flagCount = [sysA, sysB, sysC].filter(function (s) {
@@ -347,6 +402,8 @@
       systemB:          sysB,
       systemC:          sysC,
       finalVerdict:     finalVerdict,
+      riskLevel:        riskLevel,
+      riskScore:        riskScore,
       explanation:      explanation,
       // Backward-compat aliases so existing popup.js keeps working unchanged
       ruleBased:        sysA,

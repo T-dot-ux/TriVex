@@ -74,8 +74,10 @@ class SystemBResult:
 @dataclass
 class SystemCResult:
     """Result from System C (hybrid)."""
-    verdict:     str          # "phishing" | "not_flagged"
-    reasons:     List[str] = field(default_factory=list)
+    verdict:      str          # "phishing" | "suspicious" | "not_flagged"
+    risk_level:   str = "low"  # "high" | "medium" | "low"
+    risk_score:   int = 0
+    reasons:      List[str] = field(default_factory=list)
     disagreement: bool = False
 
 
@@ -91,6 +93,8 @@ class AnalysisResult:
     system_b:         Optional[SystemBResult] = None
     system_c:         Optional[SystemCResult] = None
     final_verdict:    str = ""
+    risk_level:       str = "low"
+    risk_score:       int = 0
     error:            str = ""
 
     @property
@@ -241,39 +245,86 @@ def run_system_b(features: UrlFeatures) -> SystemBResult:
 # ---------------------------------------------------------------------------
 
 def run_system_c(
+    features: UrlFeatures,
+    raw_url: str,
     system_a: SystemAResult,
     system_b: SystemBResult,
 ) -> SystemCResult:
     """
-    Hybrid decision policy (mirrors JS runSystemC exactly):
+    Hybrid decision engine (mirrors JS runSystemC exactly):
 
-    1. Run A and B independently (already done by callers).
-    2. If System A flags → final verdict is "phishing".
-    3. Otherwise → adopt System B's verdict.
-    4. Record disagreement when A.verdict != B.verdict.
-    5. Collect reasons from the deciding system.
+    1. Runs System A and System B independently.
+    2. Flags high-confidence "phishing" if:
+       - Weighted risk score >= THRESHOLD (45+), OR
+       - Critical high-confidence rule fires: IP hostname, '@' user-info,
+         or phishing keyword combined with plain HTTP.
+    3. Classifies as "suspicious" (caution / review needed) if:
+       - System A flagged a single moderate/weak rule (e.g. length > 75 or >3 dots)
+         while System B score is low, preventing false-positive hard blocking.
+       - Or System B has a moderate cumulative score (30 <= score < 45).
+    4. Classifies as "not_flagged" (low risk) if neither system flagged.
+    5. Explicitly records disagreement and uncertainty.
     """
+    reasons: List[str] = []
+    has_ip = features.hostname_is_ip
+    has_at = "@" in raw_url
+    has_keyword_no_https = features.keyword_match and features.uses_https
+    has_score_threshold = system_b.score >= system_b.threshold
+
     disagree = system_a.verdict != system_b.verdict
 
-    if system_a.verdict == "phishing":
+    if has_score_threshold or has_ip or has_at or has_keyword_no_https:
         verdict = "phishing"
-        reasons = ["System A (rule-based) flagged this URL"]
-        reasons += [f"  A: {r}" for r in system_a.reasons]
+        risk_level = "high"
+        if has_score_threshold:
+            reasons.append(
+                f"Cumulative weighted risk score ({system_b.score}) exceeds threshold ({system_b.threshold})"
+            )
+        if has_ip:
+            reasons.append("Critical indicator: raw IP address used as hostname")
+        if has_at:
+            reasons.append("Critical indicator: '@' symbol in URL indicates user-info spoofing")
+        if has_keyword_no_https:
+            reasons.append("Critical indicator: credential/banking keyword on insecure HTTP connection")
+        for r in system_a.reasons:
+            reasons.append(f"  A: {r}")
+    elif system_a.verdict == "phishing":
+        verdict = "suspicious"
+        risk_level = "medium"
+        reasons.append(
+            f"Moderate indicators detected ({', '.join(system_a.reasons)}), "
+            f"but cumulative risk score ({system_b.score}/{system_b.threshold}) "
+            "is below critical threshold. Treat with caution."
+        )
+        disagree = True
+    elif system_b.score >= 30:
+        verdict = "suspicious"
+        risk_level = "medium"
+        reasons.append(
+            f"Moderate cumulative risk score ({system_b.score}/{system_b.threshold} threshold). "
+            "Verify site credentials."
+        )
+        disagree = True
     else:
-        verdict = system_b.verdict
-        reasons = [
-            f"System A did not flag; adopting System B score "
-            f"({system_b.score}/{system_b.threshold} threshold)"
-        ]
-        reasons += [f"  B: {r}" for r in system_b.reasons]
+        verdict = "not_flagged"
+        risk_level = "low"
+        reasons.append(
+            f"No high-risk indicators detected (score {system_b.score}/{system_b.threshold} threshold)."
+        )
 
     if disagree:
         reasons.append(
             f'Disagreement: System A says "{system_a.verdict}" '
-            f'and System B says "{system_b.verdict}"'
+            f'and System B says "{system_b.verdict}".'
         )
 
-    return SystemCResult(verdict=verdict, reasons=reasons, disagreement=disagree)
+    return SystemCResult(
+        verdict=verdict,
+        risk_level=risk_level,
+        risk_score=system_b.score,
+        reasons=reasons,
+        disagreement=disagree,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -346,7 +397,7 @@ def analyze_url(raw_url: str) -> AnalysisResult:
     features, matched = extract_features(raw_url, parsed)
     sys_a = run_system_a(features)
     sys_b = run_system_b(features)
-    sys_c = run_system_c(sys_a, sys_b)
+    sys_c = run_system_c(features, raw_url, sys_a, sys_b)
 
     return AnalysisResult(
         url              = raw_url,
@@ -358,4 +409,6 @@ def analyze_url(raw_url: str) -> AnalysisResult:
         system_b         = sys_b,
         system_c         = sys_c,
         final_verdict    = sys_c.verdict,
+        risk_level       = sys_c.risk_level,
+        risk_score       = sys_c.risk_score,
     )

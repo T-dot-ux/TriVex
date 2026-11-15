@@ -162,4 +162,14 @@
     // Do NOT observe attribute or character data — too noisy
   });
 
+  // Direct query listener for instant popup response
+  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
+    chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
+      if (message && message.type === "GET_LIVE_PAGE_SIGNALS") {
+        sendResponse(collectSignals());
+      }
+      return false;
+    });
+  }
+
 })();

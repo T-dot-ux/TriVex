@@ -1,143 +1,134 @@
-# TriVex
+# TriVex — PhishGuard AI
 
-**TriVex — Explainable Phishing URL Detection Browser Extension**
+**Explainable Phishing URL Detection & Family Shield Browser Extension**
 
-A Chrome Manifest V3 extension for local, explainable phishing-URL detection with optional Family Shield content filtering. All analysis runs locally in the browser — no external server required.
-
-> **Status:** Phases 0–9 complete. Core detector, offline evaluation, phishing blocking, page monitoring, and Family Shield are all implemented.
+TriVex is a Chrome Manifest V3 extension designed for local-first, explainable phishing URL analysis with integrated Family Shield protection. All detection and classification runs inside the user's browser without external cloud dependencies, API keys, or privacy leakage.
 
 ---
 
-## Features
+## 1. Core Capabilities
 
-- **System A — Rule-based detector:** Flags on IP hostname, URL length >75, deep subdomains, suspicious symbols (`@` / multiple hyphens), or phishing keywords without HTTPS.
-- **System B — Weighted score:** Six features scored (max 120); flagged at 45+.
-- **System C — Hybrid judge:** A wins if it flags; otherwise B's verdict; disagreements reported.
-- **Phishing blocking:** Background service worker intercepts navigation to phishing URLs and redirects to a local warning page.
-- **Page monitoring:** Debounced content script reads structural signals (title, form actions, link counts) — never reads form values or passwords.
-- **Family Shield:** Separate adult-content and gambling policy with local block page and approved educational alternatives.
-- **Offline evaluation:** Python reference implementation + 60-row labelled dataset + confusion matrix, accuracy, precision, recall, F1, FPR metrics.
+- **Three-Tier Detection Engine:**
+  - **System A (Rule-Based):** Deterministic heuristics checking raw IP hostnames, URL length, excessive subdomain depth, user-info obfuscation (`@`), and credential keywords on unencrypted connections.
+  - **System B (Weighted Scoring):** Risk-weighted accumulation across six distinct feature categories with a threshold of 45/120 points.
+  - **System C (Hybrid Decision Engine):** Combines rule confidence and weighted score to resolve false positives (e.g. preventing legitimate long URLs or multi-subdomain cloud links from triggering hard phishing blocks).
+- **Phishing Protection & Redirection:**
+  - Background service worker actively monitors tab navigations.
+  - Intercepts high-confidence phishing navigations and displays a local warning page (`block.html`) with explanation details and a safe return button.
+- **Family Shield Content Policy:**
+  - Content classification engine for adult and gambling domains/keywords.
+  - User-controlled toggle switch with persistent local storage.
+  - Filters restricted destinations to `family_shield.html` featuring parent-approved educational alternatives (Khan Academy, National Geographic Kids, NASA Kids' Club, Britannica Kids, PBS LearningMedia).
+- **Continuous Page Context Monitoring:**
+  - Content script observes DOM mutations with debouncing (1000ms).
+  - Summarizes structural page signals (password field count, form action URLs, external links) without accessing form input values or passwords.
+- **Accessible & Transparent Interface:**
+  - Full screen-reader announcements (`aria-live="polite"`).
+  - Responsive design supporting dark mode and reduced-motion preferences.
+  - Local privacy disclosure page (`privacy.html`).
 
 ---
 
-## Repository layout
+## 2. Repository Layout
 
 ```text
 TriVex/
-├── frontend/                        # Chrome extension (load this folder)
-│   ├── icons/                       # Extension icons (16/32/48/128 px)
+├── frontend/                        # Chrome extension (Load this folder in chrome://extensions)
+│   ├── manifest.json                # Manifest V3 (activeTab, tabs, storage)
+│   ├── popup.html                   # Accessible popup interface
+│   ├── block.html                   # Phishing warning block page (XSS-safe textContent)
+│   ├── family_shield.html           # Family Shield filtered page (educational links)
+│   ├── privacy.html                 # Privacy policy & permissions disclosure
+│   ├── icons/                       # Extension icons (16, 32, 48, 128 px)
 │   ├── scripts/
-│   │   ├── detector.js              # Detection engine (Systems A, B, C)
-│   │   ├── popup.js                 # Popup UI logic + Family Shield toggle
-│   │   ├── background.js            # Service worker — phishing blocking
-│   │   ├── content.js               # Page monitoring content script
-│   │   └── family_shield.js        # Content-category classifier
-│   ├── styles/
-│   │   └── popup.css                # Popup styles (light + dark mode)
-│   ├── manifest.json                # MV3 manifest
-│   ├── popup.html                   # Extension popup
-│   ├── block.html                   # Local phishing block page
-│   └── family_shield.html          # Family Shield filtered-content page
+│   │   ├── detector.js              # Canonical detection engine (Systems A, B, C)
+│   │   ├── popup.js                 # Popup UI controller & state machine
+│   │   ├── background.js            # MV3 service worker (navigation interception & messaging)
+│   │   ├── content.js               # Debounced DOM monitor (structural signals)
+│   │   └── family_shield.js         # Content category classifier
+│   └── styles/
+│       └── popup.css                # Responsive styles (light/dark mode, accessible focus)
 │
-├── backend/                         # Offline Python evaluation (no server needed)
-│   ├── trivex_detector.py           # Python mirror of detector.js
-│   ├── evaluate.py                  # Evaluation runner (confusion matrix + metrics)
-│   ├── sanity_check.py              # Quick 5-URL smoke test
+├── backend/                         # Offline Python evaluation (standard library only)
+│   ├── trivex_detector.py           # Python reference implementation (exact parity with JS)
+│   ├── evaluate.py                  # Evaluation runner computing confusion matrix & 6 metrics
+│   ├── sanity_check.py              # 5-URL smoke test verification
+│   ├── parity_test.py               # Cross-language JS/Python execution parity test
+│   ├── requirements.txt             # Python requirements (stdlib only)
 │   ├── data/
-│   │   └── dataset.csv              # 60-row labelled dataset (30 phishing, 30 benign)
-│   ├── results/
-│   │   └── latest.json              # Most recent evaluation output
-│   ├── requirements.txt
-│   └── README.md
+│   │   ├── dataset.csv              # 120-row labelled dataset (60 phishing, 60 benign)
+│   │   └── DATASET_PROVENANCE.md    # Methodology, sources, and edge-case documentation
+│   └── results/
+│       ├── latest.json              # Latest evaluation output JSON
+│       └── evaluation_*.json        # Historical timestamped evaluation outputs
 │
-├── er_diag_code                     # Mermaid ER diagram source
-├── mermaid-diagram.png
-├── trivex_backend_family_shield_dev_playbook.md
+├── er_diag_code                     # Mermaid ER diagram source (11 domain entities)
+├── mermaid-diagram.png              # Rendered ER diagram visualization
+├── trivex_backend_family_shield_dev_playbook.md # Technical specification & playbook
+├── TRIVEX_PROJECT_AUDIT_AND_TODO.md # Codebase audit and implementation roadmap
 └── README.md
 ```
 
 ---
 
-## Load the extension
+## 3. Installation & Usage in Google Chrome
 
-1. Open `chrome://extensions`
-2. Enable **Developer mode** (top-right toggle)
-3. Click **Load unpacked**
-4. Select the `frontend/` folder
+1. Open Google Chrome and go to `chrome://extensions/`.
+2. Turn **ON** the **Developer mode** toggle in the top-right corner.
+3. Click the **Load unpacked** button in the top-left corner.
+4. Select the `frontend/` folder in this repository.
+5. Click the TriVex shield icon in the browser toolbar:
+   - Click **Analyze current page** to evaluate the active tab.
+   - Or paste any address into the input field and click **Analyze URL**.
+   - Toggle **Family Shield** on or off at the bottom of the popup.
 
 ---
 
-## Python evaluation setup
+## 4. Offline Python Evaluation
+
+The offline evaluation suite runs independently using the Python standard library (no pip dependencies required):
 
 ```bash
-# Create a virtual environment
-python -m venv .venv
-
-# Activate (Windows PowerShell)
-.\.venv\Scripts\Activate.ps1
-
-# Activate (macOS / Linux)
-source .venv/bin/activate
-
-# Run evaluation (no pip installs needed — stdlib only)
 cd backend
+
+# 1. Run basic smoke test
+python sanity_check.py
+
+# 2. Run cross-language parity test (verifies identical JS and Python behavior)
+python parity_test.py
+
+# 3. Run complete evaluation benchmark
 python evaluate.py
 ```
 
-### Latest evaluation results (60-URL dataset, 30 phishing / 30 benign)
+### Benchmark Results (Dataset v1.1.0 — 120 URLs: 60 Phishing, 60 Benign)
 
-| System | Accuracy | Precision | Recall | F1 | FPR |
-|--------|----------|-----------|--------|----|-----|
-| A — Rule-based | 100% | 1.00 | 1.00 | 1.00 | 0.00 |
-| B — Weighted   | 100% | 1.00 | 1.00 | 1.00 | 0.00 |
-| C — Hybrid     | 100% | 1.00 | 1.00 | 1.00 | 0.00 |
+Evaluated with real-world hard negatives including legitimate long URLs (>75 chars), multi-hyphen domains, and corporate/cloud subdomains:
 
-> **Note:** These results reflect the labelled dataset included in this repository.
-> The dataset was constructed to cover the feature space defined in the playbook.
-> Real-world performance will differ; do not present these figures as general benchmarks.
+| System | TP | FP | TN | FN | Accuracy | Precision | Recall | F1-Score | FPR |
+|---|---|---|---|---|---|---|---|---|---|
+| **System A (Rule-Based)** | 60 | 17 | 43 | 0 | 85.8% | 77.9% | 100.0% | 0.8759 | 28.3% |
+| **System B (Weighted Score, >=45)** | 59 | 2 | 58 | 1 | 97.5% | 96.7% | 98.3% | 0.9752 | 3.3% |
+| **System C (High-Confidence Phishing)** | 60 | 2 | 58 | 0 | **98.3%** | **96.8%** | **100.0%** | **0.9836** | **3.3%** |
+| **System C (Composite Warning / Caution)** | 60 | 17 | 43 | 0 | 85.8% | 77.9% | 100.0% | 0.8759 | 28.3% |
 
----
-
-## Safety and scope
-
-- URL text is analyzed locally — the extension never visits or fetches suspicious URLs.
-- "Not flagged" does not mean "guaranteed safe."
-- Gemini integration is not implemented in this version.
-- Version 1 does not require accounts, a hosted backend, or a database.
-- Family Shield adult-content filtering is keyword/domain-based; it is not a trained classifier.
-- The extension cannot prevent its own removal or permission revocation.
+- **Key Result:** System A flags any single anomaly, generating a 28.3% False Positive Rate on safe sites. System C integrates weighted risk scoring to filter out benign single-indicator anomalies, lowering the False Positive Rate to 3.3% while maintaining 100% recall on genuine attacks.
 
 ---
 
-## Development phases completed
+## 5. Team Responsibilities
 
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 0 | Repository audit | ✅ |
-| 1 | URL parsing & feature extraction (JS + Python) | ✅ |
-| 2 | System A — rule-based detector | ✅ |
-| 3 | System B — weighted scoring | ✅ |
-| 4 | System C — hybrid decision | ✅ |
-| 5 | Popup integration | ✅ |
-| 6 | Offline evaluation (dataset + metrics) | ✅ |
-| 7 | Phishing blocking + local block page | ✅ |
-| 8 | Continuous page monitoring | ✅ |
-| 9 | Family Shield | ✅ |
-| 10 | Accounts / Gemini (optional) | ⏳ Deferred |
-| 11 | Incognito + release review | ⏳ Pending |
+| Member | Focus Area | Contributions |
+|---|---|---|
+| **Saksham Kakar (Member 1)** | Extension UI & Accessibility | Accessible UI states, screen-reader live regions, responsive popup styling, privacy disclosure page. |
+| **Tanish (Member 2)** | Detection Engine & Architecture | Dual-language detector parity, false-positive mitigation, background service worker, navigation blocking, Family Shield classifier. |
+| **Youganter Kumar Singh (Member 3)** | Evaluation & Testing | Dataset curation (v1.1.0), provenance methodology, cross-language parity testing suite, metrics reporting. |
 
 ---
 
-## Team
+## 6. Security & Privacy Guarantees
 
-| Member | Responsibility |
-|--------|----------------|
-| Saksham Kakar | Browser extension UI and integration |
-| Tanish | Detection engine |
-| Youganter Kumar Singh | Dataset and offline evaluation |
-
----
-
-## License
-
-No license has been selected yet. Until one is added, all rights are reserved by the project authors.
+- **No Remote Processing:** Zero URLs or page content are transmitted externally.
+- **No Password Reading:** The content monitor counts password fields but never inspects their values.
+- **Safe Rendering:** All dynamic URL display is done via `textContent` to prevent DOM XSS vulnerabilities.
+- **Least Privilege:** Unused permissions (such as `declarativeNetRequest`) have been excised from the manifest.

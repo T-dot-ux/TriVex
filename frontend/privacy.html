@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TriVex — Privacy &amp; Security Disclosure</title>
+  <link rel="stylesheet" href="styles/popup.css" />
+  <style>
+    body { width: auto; max-width: 640px; margin: 0 auto; padding: 24px 16px; font-size: 14px; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    h2 { font-size: 15px; margin: 20px 0 4px; }
+    ul { margin: 4px 0 0; padding-left: 20px; }
+    li { margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <h1>TriVex Privacy &amp; Security Information</h1>
+  <p class="muted">This document describes data handling, permissions, and security practices in TriVex.</p>
+
+  <h2>What TriVex Does</h2>
+  <p>TriVex is an explainable browser protection tool. It evaluates web addresses locally in your browser using a combination of deterministic rules (System A), weighted risk scoring (System B), and a hybrid decision engine (System C).</p>
+
+  <h2>What Stays On Your Device</h2>
+  <ul>
+    <li><strong>All URL evaluations run locally:</strong> The addresses you visit or analyze are evaluated strictly within your browser.</li>
+    <li><strong>Zero external transmission:</strong> TriVex does not send visited URLs, page titles, or scan results to external servers or cloud services.</li>
+    <li><strong>Zero history tracking:</strong> TriVex does not log or persist a permanent history of the websites you browse.</li>
+    <li><strong>Local storage only:</strong> User preferences (e.g. Family Shield toggle) and temporary page context counters are kept strictly in local browser storage.</li>
+  </ul>
+
+  <h2>What TriVex Never Does</h2>
+  <ul>
+    <li>It never reads, intercepts, or stores password inputs, form field contents, or personal credentials.</li>
+    <li>It never fetches or opens suspicious URLs in the background.</li>
+    <li>It never introduces third-party advertising or commercial tracking scripts.</li>
+  </ul>
+
+  <h2>Permissions Used &amp; Justification</h2>
+  <ul>
+    <li><strong>activeTab:</strong> Allows TriVex to read the web address of the active tab only when you explicitly click "Analyze current page".</li>
+    <li><strong>tabs:</strong> Allows the background service worker to redirect navigations to local warning pages (<code>block.html</code> and <code>family_shield.html</code>) when high-confidence phishing or adult content is detected.</li>
+    <li><strong>storage:</strong> Stores user preferences (such as enabling or disabling Family Shield) and rolling page context counters locally.</li>
+  </ul>
+
+  <h2>Protection Scope &amp; Limitations</h2>
+  <p>URL-only and structural checks look for known phishing indicators such as IP-based hostnames, credential-harvesting patterns over unencrypted HTTP, and suspicious character groupings. However, URL-based checks cannot detect a compromised legitimate service. "No high-risk indicators detected" does not mean a website is guaranteed safe. Always verify site authenticity before entering credentials.</p>
+</body>
+</html>

@@ -1,17 +1,23 @@
 """
 TriVex offline evaluation script.
 
-Loads backend/data/dataset.csv, runs all three detection systems (A, B, C)
-against each URL, and computes classification metrics for each system.
-
-Metrics computed per system:
+Loads backend/data/dataset.csv, runs all detection systems against each URL,
+and computes complete classification metrics:
   - Accuracy
   - Precision
   - Recall
   - F1-score
   - False Positive Rate (FPR)
+  - False Negative Rate (FNR)
+  - Confusion Matrix (TP, FP, TN, FN)
 
-Results are printed to stdout and saved as JSON files in backend/results/.
+Evaluated Systems:
+  1. System A — Rule-based (any rule flags)
+  2. System B — Weighted scoring (score >= 45)
+  3. System C — High-Confidence Phishing (blocking trigger)
+  4. System C — Composite Warning (includes caution / suspicious level)
+
+Results are printed to stdout and saved as JSON in backend/results/.
 
 Usage:
     cd backend
@@ -29,7 +35,6 @@ from typing import Any
 # Import the detector
 # ---------------------------------------------------------------------------
 
-# Allow running from repo root or from backend/
 _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
@@ -47,18 +52,15 @@ RESULTS_DIR  = _SCRIPT_DIR / "results"
 # Dataset loading
 # ---------------------------------------------------------------------------
 
-
 def load_dataset(path: Path) -> list[dict]:
     """
     Load a CSV file with columns ``url`` and ``true_label``.
-
     Returns a list of dicts: [{"url": str, "true_label": str}, ...]
-    Valid true_label values: "phishing", "benign".
     """
     records = []
     with open(path, newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
-        for row_num, row in enumerate(reader, start=2):   # row 1 is header
+        for row_num, row in enumerate(reader, start=2):
             url   = (row.get("url")        or "").strip()
             label = (row.get("true_label") or "").strip().lower()
             if not url:
@@ -78,16 +80,10 @@ def load_dataset(path: Path) -> list[dict]:
 # Metric computation
 # ---------------------------------------------------------------------------
 
-
 def compute_metrics(tp: int, fp: int, tn: int, fn: int) -> dict[str, float]:
     """
     Compute classification metrics from a confusion matrix.
-
     Positive class = "phishing".
-
-    Returns:
-        {accuracy, precision, recall, f1_score, false_positive_rate}
-        All values in [0, 1] (not percentages).
     """
     total     = tp + fp + tn + fn
     accuracy  = (tp + tn) / total if total else 0.0
@@ -97,30 +93,36 @@ def compute_metrics(tp: int, fp: int, tn: int, fn: int) -> dict[str, float]:
         2 * precision * recall / (precision + recall)
         if (precision + recall) else 0.0
     )
-    fpr = fp / (fp + tn) if (fp + tn) else 0.0   # False Positive Rate
+    fpr = fp / (fp + tn) if (fp + tn) else 0.0
+    fnr = fn / (tp + fn) if (tp + fn) else 0.0
 
     return {
-        "accuracy":           round(accuracy,  4),
-        "precision":          round(precision, 4),
-        "recall":             round(recall,    4),
-        "f1_score":           round(f1,        4),
-        "false_positive_rate": round(fpr,      4),
+        "accuracy":            round(accuracy,  4),
+        "precision":           round(precision, 4),
+        "recall":              round(recall,    4),
+        "f1_score":            round(f1,        4),
+        "false_positive_rate": round(fpr,       4),
+        "false_negative_rate": round(fnr,       4),
     }
 
 
 # ---------------------------------------------------------------------------
-# Per-system evaluator
+# Per-system evaluators
 # ---------------------------------------------------------------------------
 
-
 def _verdict_fn_a(result: AnalysisResult) -> str:
-    return result.system_a.verdict if result.system_a else "not_flagged"
+    return "phishing" if (result.system_a and result.system_a.verdict == "phishing") else "not_flagged"
 
 def _verdict_fn_b(result: AnalysisResult) -> str:
-    return result.system_b.verdict if result.system_b else "not_flagged"
+    return "phishing" if (result.system_b and result.system_b.verdict == "phishing") else "not_flagged"
 
-def _verdict_fn_c(result: AnalysisResult) -> str:
-    return result.system_c.verdict if result.system_c else "not_flagged"
+def _verdict_fn_c_strict(result: AnalysisResult) -> str:
+    # High-confidence phishing only (triggers hard block)
+    return "phishing" if (result.system_c and result.system_c.verdict == "phishing") else "not_flagged"
+
+def _verdict_fn_c_caution(result: AnalysisResult) -> str:
+    # Includes caution/suspicious levels (user alert)
+    return "phishing" if (result.system_c and result.system_c.verdict in ("phishing", "suspicious")) else "not_flagged"
 
 
 def evaluate_detector(
@@ -129,18 +131,6 @@ def evaluate_detector(
 ) -> dict[str, Any]:
     """
     Run *verdict_fn* on each record's URL and compare against the true label.
-
-    Args:
-        verdict_fn: Callable(AnalysisResult) -> "phishing" | "not_flagged"
-        records:    List of {"url": str, "true_label": str}
-
-    Returns:
-        {
-            "tp", "fp", "tn", "fn",        # confusion matrix counts
-            "metrics": {...},              # from compute_metrics
-            "errors":  [str],              # URLs that failed to parse
-            "details": [{url, true, pred}] # per-URL breakdown
-        }
     """
     tp = fp = tn = fn = 0
     errors:  list[str]  = []
@@ -148,7 +138,7 @@ def evaluate_detector(
 
     for rec in records:
         url        = rec["url"]
-        true_label = rec["true_label"]   # "phishing" | "benign"
+        true_label = rec["true_label"]
 
         result = analyze_url(url)
 
@@ -159,14 +149,13 @@ def evaluate_detector(
         pred_verdict = verdict_fn(result)
         pred_label   = "phishing" if pred_verdict == "phishing" else "benign"
 
-        # Confusion matrix (positive = phishing)
         if true_label == "phishing" and pred_label == "phishing":
             tp += 1
         elif true_label == "benign" and pred_label == "phishing":
             fp += 1
         elif true_label == "benign" and pred_label == "benign":
             tn += 1
-        else:  # true phishing, predicted benign
+        else:
             fn += 1
 
         details.append({
@@ -193,24 +182,24 @@ def evaluate_detector(
 # Pretty-print helpers
 # ---------------------------------------------------------------------------
 
-
 def _print_confusion_matrix(name: str, res: dict) -> None:
     tp, fp, tn, fn = res["tp"], res["fp"], res["tn"], res["fn"]
     m = res["metrics"]
-    print(f"\n{'='*56}")
+    print(f"\n{'='*64}")
     print(f"  {name}")
-    print(f"{'='*56}")
+    print(f"{'='*64}")
     print(f"  Confusion matrix (positive = phishing):")
     print(f"    TP (correctly flagged phishing) : {tp:>4}")
     print(f"    FP (benign wrongly flagged)     : {fp:>4}")
     print(f"    TN (correctly passed benign)    : {tn:>4}")
     print(f"    FN (phishing missed)            : {fn:>4}")
     print(f"  Metrics:")
-    print(f"    Accuracy           : {m['accuracy']:.4f}  ({m['accuracy']*100:.1f}%)")
-    print(f"    Precision          : {m['precision']:.4f}")
-    print(f"    Recall             : {m['recall']:.4f}")
-    print(f"    F1-score           : {m['f1_score']:.4f}")
-    print(f"    False Positive Rate: {m['false_positive_rate']:.4f}")
+    print(f"    Accuracy            : {m['accuracy']:.4f}  ({m['accuracy']*100:.1f}%)")
+    print(f"    Precision           : {m['precision']:.4f}")
+    print(f"    Recall              : {m['recall']:.4f}")
+    print(f"    F1-score            : {m['f1_score']:.4f}")
+    print(f"    False Positive Rate : {m['false_positive_rate']:.4f}")
+    print(f"    False Negative Rate : {m['false_negative_rate']:.4f}")
     if res["errors"]:
         print(f"  Parse errors ({len(res['errors'])}):")
         for e in res["errors"]:
@@ -221,27 +210,25 @@ def _print_confusion_matrix(name: str, res: dict) -> None:
 # Main
 # ---------------------------------------------------------------------------
 
-
 def main() -> None:
-    """Load dataset, evaluate all three systems, save results."""
-    print("TriVex Offline Evaluation")
+    """Load dataset, evaluate all systems, save results."""
+    print("TriVex Offline Evaluation Runner")
     print(f"  Dataset : {DATASET_PATH}")
     print(f"  Results : {RESULTS_DIR}")
 
-    # Load dataset
     if not DATASET_PATH.exists():
         sys.exit(f"[ERROR] Dataset not found: {DATASET_PATH}")
 
     records = load_dataset(DATASET_PATH)
-    print(f"  Loaded  : {len(records)} records "
-          f"({sum(1 for r in records if r['true_label']=='phishing')} phishing, "
-          f"{sum(1 for r in records if r['true_label']=='benign')} benign)")
+    n_phish = sum(1 for r in records if r['true_label'] == 'phishing')
+    n_benign = sum(1 for r in records if r['true_label'] == 'benign')
+    print(f"  Loaded  : {len(records)} records ({n_phish} phishing, {n_benign} benign)")
 
-    # Evaluate each system
     systems = {
         "System A (Rule-based)": _verdict_fn_a,
-        "System B (Weighted)":   _verdict_fn_b,
-        "System C (Hybrid)":     _verdict_fn_c,
+        "System B (Weighted score, threshold=45)": _verdict_fn_b,
+        "System C (High-Confidence Phishing / Block Trigger)": _verdict_fn_c_strict,
+        "System C (Composite Warning / Caution included)": _verdict_fn_c_caution,
     }
 
     all_results: dict[str, Any] = {}
@@ -250,7 +237,6 @@ def main() -> None:
         all_results[name] = res
         _print_confusion_matrix(name, res)
 
-    # Save results to JSON
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     run_date = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
@@ -258,6 +244,8 @@ def main() -> None:
         "run_date":        run_date,
         "dataset_path":    str(DATASET_PATH),
         "record_count":    len(records),
+        "phishing_count":  n_phish,
+        "benign_count":    n_benign,
         "systems":         {},
     }
 
@@ -275,15 +263,14 @@ def main() -> None:
     with open(output_path, "w", encoding="utf-8") as fh:
         json.dump(summary, fh, indent=2)
 
-    # Also write a stable "latest" file for easy access
     latest_path = RESULTS_DIR / "latest.json"
     with open(latest_path, "w", encoding="utf-8") as fh:
         json.dump(summary, fh, indent=2)
 
-    print(f"\n{'='*56}")
+    print(f"\n{'='*64}")
     print(f"  Results saved to: {output_path}")
     print(f"  Latest link    : {latest_path}")
-    print(f"{'='*56}\n")
+    print(f"{'='*64}\n")
 
 
 if __name__ == "__main__":

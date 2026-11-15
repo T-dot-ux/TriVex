@@ -1,230 +1,225 @@
 /*
- * background.js — TriVex MV3 service worker (Phase 7: Phishing Blocking).
+ * background.js — TriVex MV3 Service Worker.
  *
- * Intercepts tab navigations, analyzes the URL with the detector logic,
- * and redirects phishing URLs to the local block page.
+ * Responsibilities:
+ *   1. Intercepts tab navigations to block high-confidence phishing & adult content (Family Shield).
+ *   2. Receives and buffers continuous page monitoring signals from content.js.
+ *   3. Provides a structured message API for the popup and content scripts.
  *
- * IMPORTANT: Service workers cannot use DOM APIs.
- * The core detector logic is inlined below (kept in sync with detector.js).
- *
- * Rules:
- *   - Only intercept http:// and https:// navigations
- *   - Never intercept extension pages (chrome-extension://)
- *   - Never intercept the block page itself (prevent redirect loops)
- *   - Redirect phishing URLs to block.html?url=<encoded>
- *   - Also forward PAGE_SIGNALS messages from content.js
+ * Rule: Service workers cannot use DOM APIs. Core detection and category classification
+ * are imported via importScripts from detector.js and family_shield.js.
  */
 
 "use strict";
 
-/* ================================================================
-   INLINED DETECTOR LOGIC (must stay in sync with detector.js)
-   ================================================================ */
-
-var THRESHOLD = 45;
-var KEYWORDS  = ["secure", "login", "verify", "update", "account", "banking"];
-
-function isIpHostname(hostname) {
-  if (!hostname) return false;
-  if (hostname.charAt(0) === "[") return true;   // IPv6
-  return /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname); // IPv4
-}
-
-function extractFeatures(rawUrl, parsed) {
-  var hostname   = parsed.hostname;
-  var lowerUrl   = rawUrl.toLowerCase();
-  var hyphenCount = (hostname.match(/-/g) || []).length;
-  var dotCount    = (hostname.match(/\./g) || []).length;
-
-  var matched = KEYWORDS.filter(function (kw) {
-    return lowerUrl.indexOf(kw) !== -1;
-  });
-
-  var noHttps = parsed.protocol === "http:";
-
-  return {
-    features: {
-      hostname_is_ip:     isIpHostname(hostname),
-      suspicious_symbols: rawUrl.indexOf("@") !== -1 || hyphenCount >= 2,
-      hostname_dot_count: dotCount > 3,
-      keyword_match:      matched.length > 0,
-      url_length:         rawUrl.length > 75,
-      uses_https:         noHttps,
-    },
-    matchedKeywords: matched,
-  };
-}
-
-function runSystemA(f) {
-  var reasons = [];
-  if (f.hostname_is_ip)     reasons.push("IP address detected in hostname");
-  if (f.url_length)         reasons.push("URL length exceeds 75 characters");
-  if (f.hostname_dot_count) reasons.push("Hostname has more than 3 dots (deep subdomains)");
-  if (f.suspicious_symbols) reasons.push("URL contains '@' or hostname has 2+ hyphens");
-  if (f.keyword_match && f.uses_https) reasons.push("Targeted keyword found AND HTTPS is absent");
-  return { verdict: reasons.length > 0 ? "phishing" : "not_flagged", reasons: reasons };
-}
-
-function runSystemB(f) {
-  var weights = { hostname_is_ip: 35, suspicious_symbols: 30, hostname_dot_count: 20,
-                  keyword_match: 15, url_length: 10, uses_https: 10 };
-  var labels  = { hostname_is_ip: "IP address", suspicious_symbols: "Suspicious symbols",
-                  hostname_dot_count: "Deep subdomains", keyword_match: "Phishing keyword",
-                  url_length: "Long URL", uses_https: "No HTTPS" };
-  var score   = 0;
-  var reasons = [];
-  Object.keys(weights).forEach(function (k) {
-    if (f[k]) {
-      score += weights[k];
-      reasons.push(labels[k] + " (+" + weights[k] + ")");
-    }
-  });
-  return { score: score, maxScore: 120, threshold: THRESHOLD,
-           verdict: score >= THRESHOLD ? "phishing" : "not_flagged", reasons: reasons };
-}
-
-function runSystemC(sysA, sysB) {
-  var disagree = sysA.verdict !== sysB.verdict;
-  var verdict  = sysA.verdict === "phishing" ? "phishing" : sysB.verdict;
-  var reasons  = sysA.verdict === "phishing" ? sysA.reasons.slice() : sysB.reasons.slice();
-  if (disagree) reasons.push("Detectors disagree: A=" + sysA.verdict + " B=" + sysB.verdict);
-  return { verdict: verdict, reasons: reasons, disagreement: disagree };
-}
-
-function analyzeUrlInline(raw) {
-  if (!raw) return null;
-  var parsed;
-  try { parsed = new URL(raw); } catch (e) { return null; }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-  if (!parsed.hostname) return null;
-  var ex   = extractFeatures(raw, parsed);
-  var sysA = runSystemA(ex.features);
-  var sysB = runSystemB(ex.features);
-  var sysC = runSystemC(sysA, sysB);
-  return { url: raw, systemC: sysC, systemA: sysA, systemB: sysB };
+// Import canonical detector and Family Shield classifier
+try {
+  importScripts("detector.js", "family_shield.js");
+} catch (e) {
+  console.error("TriVex: Failed to importScripts in service worker:", e);
 }
 
 /* ================================================================
-   BLOCK-PAGE URL HELPER
+   DETECTOR & CLASSIFIER ACCESSORS
    ================================================================ */
 
-function makeBlockUrl(blockedUrl, reason) {
-  var base = chrome.runtime.getURL("block.html");
-  return base + "?url=" + encodeURIComponent(blockedUrl) +
-         "&reason=" + encodeURIComponent(reason || "phishing");
-}
-
-function makeFamilyShieldUrl(blockedUrl, reason) {
-  var base = chrome.runtime.getURL("family_shield.html");
-  return base + "?url=" + encodeURIComponent(blockedUrl) +
-         "&reason=" + encodeURIComponent(reason || "filtered");
-}
-
-/* ================================================================
-   SKIP-LIST — never intercept these URLs
-   ================================================================ */
-
-function shouldSkip(url) {
-  if (!url) return true;
-  if (url.startsWith("chrome://"))          return true;
-  if (url.startsWith("chrome-extension://")) return true;
-  if (url.startsWith("about:"))             return true;
-  if (url.startsWith("data:"))              return true;
-  if (url.startsWith("javascript:"))        return true;
-  // Prevent redirect loops — skip our own block pages
-  var blockHtml         = chrome.runtime.getURL("block.html");
-  var familyShieldHtml  = chrome.runtime.getURL("family_shield.html");
-  if (url.startsWith(blockHtml))        return true;
-  if (url.startsWith(familyShieldHtml)) return true;
-  return false;
-}
-
-/* ================================================================
-   FAMILY SHIELD CONTENT CHECK (basic keyword / domain based)
-   ================================================================ */
-
-var ADULT_DOMAINS = [
-  "pornhub.com", "xvideos.com", "redtube.com", "xnxx.com",
-  "brazzers.com", "playboy.com", "hustler.com", "penthouse.com",
-  "xxx.com", "sex.com"
-];
-
-var ADULT_KEYWORDS = [
-  "pornography", "explicit-content", "adult-content", "xxx",
-  "erotic", "nudity", "onlyfans"
-];
-
-function checkFamilyShield(url) {
-  var lc = url.toLowerCase();
-  var hostname;
-  try {
-    hostname = new URL(url).hostname.replace(/^www\./, "");
-  } catch (e) {
-    return null;
+function getDetector() {
+  if (typeof self.analyzeUrl === "function") return self.analyzeUrl;
+  if (self.PhishGuard && typeof self.PhishGuard.analyzeUrl === "function") {
+    return self.PhishGuard.analyzeUrl;
   }
-  if (ADULT_DOMAINS.some(function (d) { return hostname === d || hostname.endsWith("." + d); })) {
-    return { category: "adult", confidence: "high", reason: "Known adult content domain" };
-  }
-  if (ADULT_KEYWORDS.some(function (kw) { return lc.indexOf(kw) !== -1; })) {
-    return { category: "adult", confidence: "medium", reason: "Adult content keyword in URL" };
+  return null;
+}
+
+function getClassifier() {
+  if (self.FamilyShield && typeof self.FamilyShield.classifyUrl === "function") {
+    return self.FamilyShield.classifyUrl;
   }
   return null;
 }
 
 /* ================================================================
-   TAB NAVIGATION LISTENER
+   URL HELPERS
+   ================================================================ */
+
+function makeBlockUrl(blockedUrl, reason) {
+  var base = chrome.runtime.getURL("block.html");
+  return (
+    base +
+    "?url=" +
+    encodeURIComponent(blockedUrl) +
+    "&reason=" +
+    encodeURIComponent(reason || "High-risk phishing indicators detected")
+  );
+}
+
+function makeFamilyShieldUrl(blockedUrl, reason) {
+  var base = chrome.runtime.getURL("family_shield.html");
+  return (
+    base +
+    "?url=" +
+    encodeURIComponent(blockedUrl) +
+    "&reason=" +
+    encodeURIComponent(reason || "Filtered content")
+  );
+}
+
+function shouldSkip(url) {
+  if (!url || typeof url !== "string") return true;
+  var lower = url.toLowerCase();
+  if (
+    lower.startsWith("chrome://") ||
+    lower.startsWith("chrome-extension://") ||
+    lower.startsWith("about:") ||
+    lower.startsWith("data:") ||
+    lower.startsWith("javascript:") ||
+    lower.startsWith("edge://") ||
+    lower.startsWith("brave://")
+  ) {
+    return true;
+  }
+  // Prevent redirect loops
+  var blockHtml = chrome.runtime.getURL("block.html");
+  var familyShieldHtml = chrome.runtime.getURL("family_shield.html");
+  if (url.startsWith(blockHtml) || url.startsWith(familyShieldHtml)) {
+    return true;
+  }
+  return false;
+}
+
+/* ================================================================
+   TAB NAVIGATION INTERCEPTION (PHISHING & FAMILY SHIELD)
    ================================================================ */
 
 chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
-  // Only act on committed navigations with a real URL
   if (changeInfo.status !== "loading") return;
   var url = changeInfo.url || tab.url;
-  if (!url) return;
-  if (shouldSkip(url)) return;
+  if (!url || shouldSkip(url)) return;
 
-  // Read Family Shield setting from storage (async)
-  chrome.storage.local.get(["familyShieldEnabled"], function (result) {
-    var fsEnabled = !!result.familyShieldEnabled;
+  chrome.storage.local.get(["familyShieldEnabled"], function (stored) {
+    var fsEnabled = !!stored.familyShieldEnabled;
 
-    // --- Phishing check (always on) ---
-    var analysis = analyzeUrlInline(url);
-    if (analysis && analysis.systemC.verdict === "phishing") {
-      var reason = analysis.systemC.reasons[0] || "Flagged as phishing";
-      chrome.tabs.update(tabId, { url: makeBlockUrl(url, reason) });
-      return;
+    // 1. Phishing check (Always active)
+    var detector = getDetector();
+    if (detector) {
+      try {
+        var analysis = detector(url);
+        // Only trigger hard block on high-confidence "phishing" (not on "suspicious" or "not_flagged")
+        if (
+          analysis &&
+          !analysis.error &&
+          analysis.finalVerdict === "phishing"
+        ) {
+          var reason =
+            (analysis.systemC && analysis.systemC.reasons && analysis.systemC.reasons[0]) ||
+            "High-risk phishing indicators detected";
+          chrome.tabs.update(tabId, { url: makeBlockUrl(url, reason) });
+          return;
+        }
+      } catch (err) {
+        console.error("TriVex: Analysis error during navigation:", err);
+      }
     }
 
-    // --- Family Shield check (only when enabled) ---
+    // 2. Family Shield check (Active when enabled)
     if (fsEnabled) {
-      var fsResult = checkFamilyShield(url);
-      if (fsResult) {
-        chrome.tabs.update(tabId, {
-          url: makeFamilyShieldUrl(url, fsResult.reason)
-        });
-        return;
+      var classifier = getClassifier();
+      if (classifier) {
+        try {
+          var classification = classifier(url);
+          if (
+            classification &&
+            (classification.category === "adult" || classification.category === "gambling") &&
+            (classification.confidence === "high" || classification.confidence === "medium")
+          ) {
+            var fsReason =
+              (classification.evidence && classification.evidence[0]) ||
+              "Filtered by Family Shield (" + classification.category + ")";
+            chrome.tabs.update(tabId, {
+              url: makeFamilyShieldUrl(url, fsReason),
+            });
+            return;
+          }
+        } catch (err) {
+          console.error("TriVex: Classifier error during navigation:", err);
+        }
       }
     }
   });
 });
 
 /* ================================================================
-   MESSAGE LISTENER (from content.js)
+   STRUCTURED MESSAGE API
    ================================================================ */
 
 chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
-  if (!message || message.type !== "PAGE_SIGNALS") return false;
+  if (!message || typeof message !== "object") return false;
 
-  var signals = message.signals || {};
-  var tabUrl  = sender.tab && sender.tab.url;
+  switch (message.type) {
+    case "ANALYZE_URL": {
+      var targetUrl = message.url || "";
+      var detector = getDetector();
+      if (!detector) {
+        sendResponse({ ok: false, error: "Detection engine unavailable" });
+        return false;
+      }
+      try {
+        var result = detector(targetUrl);
+        sendResponse({ ok: true, result: result });
+      } catch (err) {
+        sendResponse({ ok: false, error: String(err) });
+      }
+      return false;
+    }
 
-  // Log signals to storage for popup display (ring-buffer of last 5)
-  chrome.storage.local.get(["pageSignals"], function (res) {
-    var history = Array.isArray(res.pageSignals) ? res.pageSignals : [];
-    history.unshift({ url: tabUrl, signals: signals, ts: Date.now() });
-    if (history.length > 5) history.length = 5;
-    chrome.storage.local.set({ pageSignals: history });
-  });
+    case "PAGE_SIGNALS": {
+      var signals = message.signals || {};
+      var tabUrl = (sender.tab && sender.tab.url) || signals.url || "";
+      chrome.storage.local.get(["pageSignals"], function (res) {
+        var history = Array.isArray(res.pageSignals) ? res.pageSignals : [];
+        history.unshift({
+          url: tabUrl,
+          signals: signals,
+          timestamp: Date.now(),
+        });
+        if (history.length > 10) history.length = 10;
+        chrome.storage.local.set({ pageSignals: history });
+      });
+      sendResponse({ ok: true });
+      return false;
+    }
 
-  sendResponse({ ok: true });
-  return true; // keep channel open for async
+    case "GET_PAGE_SIGNALS": {
+      var reqUrl = message.url || "";
+      chrome.storage.local.get(["pageSignals"], function (res) {
+        var history = Array.isArray(res.pageSignals) ? res.pageSignals : [];
+        var match = null;
+        if (reqUrl) {
+          match = history.find(function (item) {
+            return item.url === reqUrl;
+          });
+        }
+        sendResponse({ ok: true, signals: match ? match.signals : (history[0] ? history[0].signals : null) });
+      });
+      return true; // Keep message port open for async response
+    }
+
+    case "TOGGLE_FAMILY_SHIELD": {
+      var newSetting = !!message.enabled;
+      chrome.storage.local.set({ familyShieldEnabled: newSetting }, function () {
+        sendResponse({ ok: true, enabled: newSetting });
+      });
+      return true;
+    }
+
+    case "GET_FAMILY_SHIELD_STATUS": {
+      chrome.storage.local.get(["familyShieldEnabled"], function (res) {
+        sendResponse({ ok: true, enabled: !!res.familyShieldEnabled });
+      });
+      return true;
+    }
+
+    default:
+      return false;
+  }
 });

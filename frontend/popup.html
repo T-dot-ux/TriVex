@@ -3,96 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TriVex</title>
+  <title>TriVex — PhishGuard AI</title>
   <link rel="stylesheet" href="styles/popup.css" />
-  <style>
-    /* Family Shield toggle additions */
-    .family-shield-section {
-      margin: 0 16px 12px;
-      padding: 10px 14px;
-      background: rgba(39, 174, 96, 0.08);
-      border: 1px solid rgba(39, 174, 96, 0.3);
-      border-radius: 8px;
-    }
-    .family-shield-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-    }
-    .family-shield-label {
-      font-size: 0.88rem;
-      font-weight: 600;
-      color: #27ae60;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .family-shield-sub {
-      font-size: 0.76rem;
-      color: #7f8c8d;
-      margin-top: 3px;
-    }
-    /* Toggle switch */
-    .toggle-switch {
-      position: relative;
-      width: 36px;
-      height: 20px;
-      flex-shrink: 0;
-    }
-    .toggle-switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-      position: absolute;
-    }
-    .toggle-track {
-      position: absolute;
-      inset: 0;
-      background: #ccc;
-      border-radius: 20px;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    .toggle-switch input:checked + .toggle-track {
-      background: #27ae60;
-    }
-    .toggle-track::after {
-      content: "";
-      position: absolute;
-      top: 2px;
-      left: 2px;
-      width: 16px;
-      height: 16px;
-      background: #fff;
-      border-radius: 50%;
-      transition: transform 0.2s;
-    }
-    .toggle-switch input:checked + .toggle-track::after {
-      transform: translateX(16px);
-    }
-    /* Shield badge in header */
-    .shield-badge {
-      display: none;
-      font-size: 0.7rem;
-      background: #27ae60;
-      color: #fff;
-      padding: 1px 7px;
-      border-radius: 99px;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      margin-left: 4px;
-      vertical-align: middle;
-    }
-    .shield-badge.active { display: inline; }
-  </style>
 </head>
 <body>
   <header class="header">
-    <img src="icons/icon32.png" alt="" width="28" height="28" />
+    <img src="icons/icon32.png" alt="TriVex logo" width="28" height="28" />
     <div>
-      <h1>TriVex <span class="shield-badge" id="shieldBadge">🛡️ ON</span></h1>
-      <p class="subtitle">Explainable URL check. Runs locally, never visits the URL.</p>
+      <h1>TriVex <span class="shield-badge" id="shieldBadge" aria-label="Family Shield active">🛡️ FAMILY SHIELD</span></h1>
+      <p class="subtitle">Explainable URL analysis &amp; protection. Local-first.</p>
     </div>
   </header>
 
@@ -102,16 +21,35 @@
     <label for="urlInput" class="label">Paste a URL</label>
     <div class="row">
       <input id="urlInput" type="text" spellcheck="false" autocomplete="off"
-             placeholder="https://example.com/login" />
+             placeholder="https://example.com/login" aria-describedby="error" />
       <button id="scanUrl" class="btn" type="button">Analyze URL</button>
     </div>
     <p id="error" class="error" role="alert" hidden></p>
   </section>
 
+  <!-- Spoken summary for screen readers -->
+  <div id="announce" class="sr-only" aria-live="polite"></div>
+
+  <!-- Initial / analysing / analysis-unavailable states -->
+  <section id="statusBox" class="state" hidden>
+    <p id="statusTitle" class="state-title"></p>
+    <p id="statusText" class="state-text"></p>
+  </section>
+
   <section id="results" hidden>
+    <div id="headline" class="headline">
+      <span id="hIcon" class="h-icon" aria-hidden="true"></span>
+      <div>
+        <p id="hTitle" class="h-title"></p>
+        <p id="hSub" class="h-sub"></p>
+      </div>
+    </div>
+
     <div class="analyzed">
       <span class="muted">Analyzed:</span>
+      <strong id="hostName"></strong>
       <code id="analyzedUrl"></code>
+      <button id="toggleUrl" class="linkbtn" type="button" aria-expanded="false" hidden>Show full URL</button>
     </div>
 
     <div id="disagreement" class="banner" hidden></div>
@@ -133,36 +71,46 @@
         <div class="meter-fill" id="meterFill"></div>
         <div class="meter-mark" id="meterMark"></div>
       </div>
-      <p class="score-line"><strong id="scoreText"></strong> <span class="muted">(flagged at 45 or more, max 120)</span></p>
+      <p class="score-line"><strong id="scoreText"></strong> <span class="muted" id="scoreNote"></span></p>
       <ul class="reasons" id="reasonsB"></ul>
     </div>
 
     <div class="detector" id="cardC">
       <div class="detector-head">
-        <span class="detector-name">System C &middot; Hybrid</span>
+        <span class="detector-name">System C &middot; Hybrid Decision</span>
         <span class="pill" id="verdictC"></span>
       </div>
       <ul class="reasons" id="reasonsC"></ul>
     </div>
 
     <details class="detector features">
-      <summary>All six features</summary>
+      <summary>All six URL features</summary>
       <ul id="featureList" class="featurelist"></ul>
     </details>
+
+    <details class="detector page-signals" id="pageSignalsSection" hidden>
+      <summary>Continuous page context</summary>
+      <ul id="signalList" class="signal-list"></ul>
+    </details>
+
+    <div class="detector next">
+      <h2>Recommended next steps</h2>
+      <ul id="nextSteps" class="reasons"></ul>
+    </div>
 
     <p id="explanation" class="explanation"></p>
   </section>
 
-  <!-- Family Shield section (Phase 9) -->
+  <!-- Family Shield toggle section -->
   <section class="family-shield-section" id="familyShieldSection">
     <div class="family-shield-row">
       <div>
         <div class="family-shield-label">
-          🛡️ Family Shield
+          🛡️ Family Shield Protection
         </div>
         <div class="family-shield-sub">Block adult content and high-risk phishing</div>
       </div>
-      <label class="toggle-switch" aria-label="Enable Family Shield">
+      <label class="toggle-switch" aria-label="Toggle Family Shield Protection">
         <input type="checkbox" id="familyShieldToggle" />
         <span class="toggle-track"></span>
       </label>
@@ -170,9 +118,9 @@
   </section>
 
   <footer class="footer">
-    <strong>Not flagged does not mean verified safe.</strong>
-    URL-only checks can miss clean-looking phishing links and can warn on legitimate ones.
-    Always check the site yourself.
+    <div><strong>"No high-risk indicators detected" does not guarantee verified safe.</strong></div>
+    <div>URL checks examine structural indicators. Always confirm identity before signing in.</div>
+    <div><a href="privacy.html" target="_blank" rel="noopener">Privacy information &amp; permissions</a></div>
   </footer>
 
   <script src="scripts/detector.js"></script>
