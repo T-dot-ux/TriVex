@@ -54,6 +54,11 @@
       title: "No high-risk indicators detected",
       sub: "URL structure appears standard. This is not a guarantee that the site is safe.",
     },
+    family_shield: {
+      icon: "🛡️",
+      title: "Blocked by Family Shield: Restricted content detected",
+      sub: "This website matches the Family Shield protection filter. Live navigation is blocked.",
+    },
   };
 
   var NEXT_STEPS = {
@@ -61,6 +66,11 @@
       "Do not enter passwords, payment cards or personal information on this site.",
       "If this link came from an unsolicited email or message, close it immediately.",
       "If you already entered credentials, change them immediately on the authentic service.",
+    ],
+    family_shield: [
+      "Access to this website is blocked under active Family Shield protection.",
+      "Visiting this address in the browser redirects to the Family Shield safety page.",
+      "To allow this category, turn off Family Shield in settings below.",
     ],
     suspicious: [
       "Verify the site address carefully before signing in or submitting personal details.",
@@ -158,13 +168,16 @@
     } else {
       try {
         localStorage.setItem(key, String(val));
-      } catch (e) {}
+      } catch (e) { }
       if (cb) cb();
     }
   }
 
   // ---- Family Shield Controller -------------------------------------------
+  var isFamilyShieldEnabled = true;
+
   function updateShieldUI(enabled) {
+    isFamilyShieldEnabled = !!enabled;
     var badge = $("shieldBadge");
     var toggle = $("familyShieldToggle");
     if (badge) badge.classList.toggle("active", !!enabled);
@@ -290,7 +303,7 @@
     }
   }
 
-  function renderHeadline(r) {
+  function renderHeadline(r, shieldRes) {
     var sysC = r.systemC || r.hybrid;
     var sysA = r.systemA || r.ruleBased;
     var sysB = r.systemB || r.weighted;
@@ -301,10 +314,13 @@
         : sysA && sysB && sysA.verdict !== sysB.verdict;
 
     var verdict = (sysC && sysC.verdict) || r.finalVerdict || "not_flagged";
+    var fsBlocked = shieldRes && (shieldRes.category === "adult" || shieldRes.category === "gambling") && (shieldRes.confidence === "high" || shieldRes.confidence === "medium");
 
     var hKey = "none";
     if (verdict === "phishing") {
       hKey = "phishing";
+    } else if (fsBlocked) {
+      hKey = "family_shield";
     } else if (verdict === "suspicious") {
       hKey = "suspicious";
     } else if (disagree) {
@@ -316,17 +332,19 @@
     if (headEl) {
       headEl.className = "headline " + hKey;
       $("hIcon").textContent = h.icon;
-      $("hTitle").textContent = h.title;
+      $("hTitle").textContent = (fsBlocked && hKey === "family_shield")
+        ? "Blocked by Family Shield: " + (shieldRes.category === "adult" ? "Adult content" : "Gambling content") + " detected"
+        : h.title;
       $("hSub").textContent = disagree
         ? "System A says " +
-          (PHRASE[sysA.verdict] || sysA.verdict) +
-          ", System B says " +
-          (PHRASE[sysB.verdict] || sysB.verdict) +
-          "."
+        (PHRASE[sysA.verdict] || sysA.verdict) +
+        ", System B says " +
+        (PHRASE[sysB.verdict] || sysB.verdict) +
+        "."
         : h.sub;
     }
 
-    announce(h.title + ". " + ($("hSub").textContent || ""));
+    announce(($("hTitle") ? $("hTitle").textContent : h.title) + ". " + ($("hSub").textContent || ""));
     return hKey;
   }
 
@@ -399,13 +417,31 @@
     });
   }
 
-  function render(r) {
+  function render(r, shieldRes) {
     var sysA = r.systemA || r.ruleBased || { verdict: "not_flagged", reasons: [] };
     var sysB = r.systemB || r.weighted || { score: 0, maxScore: 120, threshold: 45, verdict: "not_flagged", reasons: [] };
     var sysC = r.systemC || r.hybrid || { verdict: "not_flagged", reasons: [] };
 
     renderUrl(r);
-    var hKey = renderHeadline(r);
+    var hKey = renderHeadline(r, shieldRes);
+
+    // Family Shield policy card
+    var fsBlocked = shieldRes && (shieldRes.category === "adult" || shieldRes.category === "gambling") && (shieldRes.confidence === "high" || shieldRes.confidence === "medium");
+    var fsCard = $("cardFamilyShield");
+    var fsPill = $("verdictFamilyShield");
+    var fsReasons = $("reasonsFamilyShield");
+    if (fsCard) {
+      if (fsBlocked) {
+        fsCard.hidden = false;
+        if (fsPill) {
+          fsPill.className = "pill blocked";
+          fsPill.textContent = "Blocked (" + (shieldRes.category === "adult" ? "Adult" : "Gambling") + ")";
+        }
+        fillList(fsReasons, shieldRes.evidence);
+      } else {
+        fsCard.hidden = true;
+      }
+    }
 
     // Disagreement Banner
     var banner = $("disagreement");
@@ -495,7 +531,7 @@
     renderPageSignals(r.url);
 
     // Recommended next steps
-    var stepsKey = hKey === "none" ? "none" : (hKey === "disagree" ? "disagree" : (hKey === "suspicious" ? "suspicious" : "phishing"));
+    var stepsKey = hKey === "none" ? "none" : (hKey === "family_shield" ? "family_shield" : (hKey === "disagree" ? "disagree" : (hKey === "suspicious" ? "suspicious" : "phishing")));
     var steps = NEXT_STEPS[stepsKey] || NEXT_STEPS.none;
     fillList($("nextSteps"), steps);
 
@@ -519,6 +555,20 @@
       return;
     }
 
+    // Evaluate Family Shield classification if enabled
+    var shieldRes = null;
+    if (isFamilyShieldEnabled) {
+      var classifier = (window.FamilyShield && window.FamilyShield.classifyUrl) ||
+                       (self.FamilyShield && self.FamilyShield.classifyUrl);
+      if (typeof classifier === "function") {
+        try {
+          shieldRes = classifier(targetUrl);
+        } catch (e) {
+          console.warn("TriVex: FamilyShield classification error:", e);
+        }
+      }
+    }
+
     // First try the local detector.js function if loaded
     if (typeof window.analyzeUrl === "function") {
       try {
@@ -528,7 +578,7 @@
           setView("invalid", localResult.error, fromInput);
           return;
         }
-        render(localResult);
+        render(localResult, shieldRes);
         setView("result");
         return;
       } catch (err) {
@@ -550,7 +600,7 @@
             setView("invalid", response.result.error, fromInput);
             return;
           }
-          render(response.result);
+          render(response.result, shieldRes);
           setView("result");
         }
       );

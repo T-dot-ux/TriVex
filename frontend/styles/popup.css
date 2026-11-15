@@ -147,6 +147,9 @@ input[type="text"] {
 .headline.disagree {
   background: var(--caution-bg); color: var(--caution-text); border-color: var(--caution-text);
 }
+.headline.family_shield {
+  background: #3d1c24; color: #ffb3b8; border: 1px solid #ff6b72;
+}
 .h-icon { font-size: 20px; line-height: 1.2; }
 .h-title { font-weight: 700; font-size: 14px; }
 .h-sub { font-size: 12.5px; }
@@ -183,6 +186,7 @@ input[type="text"] {
   white-space: nowrap;
 }
 .pill.phishing { background: var(--warn-bg); color: var(--warn-text); }
+.pill.blocked { background: #5c1d24; color: #ff8585; border: 1px solid #ff8585; }
 .pill.suspicious { background: var(--caution-bg); color: var(--caution-text); }
 .pill.not_flagged { background: var(--ok-bg); color: var(--ok-text); }
 
