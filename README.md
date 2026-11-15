@@ -1,4 +1,4 @@
-# TriVex — PhishGuard AI
+# TriVex 
 
 **Explainable Phishing URL Detection & Family Shield Browser Extension**
 
