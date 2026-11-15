@@ -173,7 +173,7 @@
 
   function initFamilyShield() {
     storageGet("familyShieldEnabled", function (val) {
-      var isEnabled = val === true || val === "true" || val === 1;
+      var isEnabled = val === undefined || val === null ? true : (val === true || val === "true" || val === 1);
       updateShieldUI(isEnabled);
     });
 

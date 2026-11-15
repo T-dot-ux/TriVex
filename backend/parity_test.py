@@ -1,5 +1,8 @@
 from trivex_detector import analyze_url
 import subprocess, json, sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 test_urls = [
     'http://192.168.1.1/secure/login',
@@ -15,7 +18,7 @@ all_passed = True
 for u in test_urls:
     py_res = analyze_url(u)
     cmd = ['node', '-e', f'const d = require("./frontend/scripts/detector.js"); console.log(JSON.stringify(d.analyzeUrl("{u}")));']
-    js_raw = subprocess.check_output(cmd, cwd='..').decode()
+    js_raw = subprocess.check_output(cmd, cwd=str(REPO_ROOT)).decode()
     js_res = json.loads(js_raw)
 
     v_match = py_res.final_verdict == js_res['finalVerdict']
@@ -29,3 +32,4 @@ for u in test_urls:
 print(f"\nAll parity tests {'PASSED' if all_passed else 'FAILED'}!")
 if not all_passed:
     sys.exit(1)
+

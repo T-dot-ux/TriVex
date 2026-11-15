@@ -123,9 +123,14 @@
       return { category: "safe", confidence: "low", evidence: ["No URL provided"] };
     }
 
+    var raw = url.trim();
+    if (!/^https?:\/\//i.test(raw)) {
+      raw = "http://" + raw;
+    }
+
     var parsed;
     try {
-      parsed = new URL(url.trim());
+      parsed = new URL(raw);
     } catch (e) {
       return { category: "safe", confidence: "low", evidence: ["URL could not be parsed"] };
     }

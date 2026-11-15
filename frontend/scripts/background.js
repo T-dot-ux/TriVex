@@ -87,17 +87,24 @@ function shouldSkip(url) {
   return false;
 }
 
+var lastRedirectedUrl = {};
+
+chrome.tabs.onRemoved.addListener(function (tabId) {
+  delete lastRedirectedUrl[tabId];
+});
+
 /* ================================================================
    TAB NAVIGATION INTERCEPTION (PHISHING & FAMILY SHIELD)
    ================================================================ */
 
 chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
-  if (changeInfo.status !== "loading") return;
-  var url = changeInfo.url || tab.url;
+  if (changeInfo.status !== "loading" && !changeInfo.url) return;
+  var url = changeInfo.url || tab.pendingUrl || (changeInfo.status === "loading" ? tab.url : null);
   if (!url || shouldSkip(url)) return;
+  if (lastRedirectedUrl[tabId] === url) return;
 
   chrome.storage.local.get(["familyShieldEnabled"], function (stored) {
-    var fsEnabled = !!stored.familyShieldEnabled;
+    var fsEnabled = stored.familyShieldEnabled !== undefined ? !!stored.familyShieldEnabled : true;
 
     // 1. Phishing check (Always active)
     var detector = getDetector();
@@ -113,6 +120,7 @@ chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
           var reason =
             (analysis.systemC && analysis.systemC.reasons && analysis.systemC.reasons[0]) ||
             "High-risk phishing indicators detected";
+          lastRedirectedUrl[tabId] = url;
           chrome.tabs.update(tabId, { url: makeBlockUrl(url, reason) });
           return;
         }
@@ -135,6 +143,7 @@ chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
             var fsReason =
               (classification.evidence && classification.evidence[0]) ||
               "Filtered by Family Shield (" + classification.category + ")";
+            lastRedirectedUrl[tabId] = url;
             chrome.tabs.update(tabId, {
               url: makeFamilyShieldUrl(url, fsReason),
             });
@@ -144,6 +153,10 @@ chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
           console.error("TriVex: Classifier error during navigation:", err);
         }
       }
+    }
+
+    if (lastRedirectedUrl[tabId] && lastRedirectedUrl[tabId] !== url) {
+      delete lastRedirectedUrl[tabId];
     }
   });
 });
@@ -214,7 +227,8 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 
     case "GET_FAMILY_SHIELD_STATUS": {
       chrome.storage.local.get(["familyShieldEnabled"], function (res) {
-        sendResponse({ ok: true, enabled: !!res.familyShieldEnabled });
+        var isEnabled = res.familyShieldEnabled !== undefined ? !!res.familyShieldEnabled : true;
+        sendResponse({ ok: true, enabled: isEnabled });
       });
       return true;
     }
