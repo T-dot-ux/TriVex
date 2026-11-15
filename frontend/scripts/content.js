@@ -25,6 +25,23 @@
     return;
   }
 
+  // Real-time navigation safety check (dual-layer protection)
+  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
+    try {
+      chrome.runtime.sendMessage(
+        { type: "NAVIGATED_URL", url: window.location.href },
+        function (res) {
+          if (chrome.runtime.lastError) return;
+          if (res && res.redirectUrl) {
+            window.location.replace(res.redirectUrl);
+          }
+        }
+      );
+    } catch (e) {
+      // Ignore worker communication errors
+    }
+  }
+
   /* ------------------------------------------------------------------ */
   /* Signal collection                                                    */
   /* ------------------------------------------------------------------ */

@@ -157,8 +157,7 @@ chrome.tabs.onActivated.addListener(function (activeInfo) {
    ================================================================ */
 
 chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
-  if (changeInfo.status !== "loading" && !changeInfo.url) return;
-  var url = changeInfo.url || tab.pendingUrl || (changeInfo.status === "loading" ? tab.url : null);
+  var url = changeInfo.url || tab.pendingUrl || tab.url;
   if (!url || shouldSkip(url)) return;
   if (lastRedirectedUrl[tabId] === url) return;
 
@@ -234,6 +233,69 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
   if (!message || typeof message !== "object") return false;
 
   switch (message.type) {
+    case "NAVIGATED_URL": {
+      var navUrl = message.url || "";
+      if (!navUrl || shouldSkip(navUrl)) {
+        sendResponse({ redirectUrl: null });
+        return false;
+      }
+      chrome.storage.local.get(["familyShieldEnabled"], function (stored) {
+        var fsEnabled = stored.familyShieldEnabled !== undefined ? !!stored.familyShieldEnabled : true;
+        // 1. Phishing check
+        var detector = getDetector();
+        if (detector) {
+          try {
+            var analysis = detector(navUrl);
+            if (analysis && !analysis.error && analysis.finalVerdict === "phishing") {
+              var reason =
+                (analysis.systemC && analysis.systemC.reasons && analysis.systemC.reasons[0]) ||
+                "High-risk phishing indicators detected";
+              var target = makeBlockUrl(navUrl, reason);
+              if (sender.tab && sender.tab.id) {
+                lastRedirectedUrl[sender.tab.id] = navUrl;
+                updateBadge(sender.tab.id, "phishing", false);
+                chrome.tabs.update(sender.tab.id, { url: target });
+              }
+              sendResponse({ redirectUrl: target });
+              return;
+            }
+          } catch (e) {
+            console.error("TriVex: Error in NAVIGATED_URL phishing check:", e);
+          }
+        }
+        // 2. Family Shield check
+        if (fsEnabled) {
+          var classifier = getClassifier();
+          if (classifier) {
+            try {
+              var classification = classifier(navUrl);
+              if (
+                classification &&
+                (classification.category === "adult" || classification.category === "gambling") &&
+                (classification.confidence === "high" || classification.confidence === "medium")
+              ) {
+                var fsReason =
+                  (classification.evidence && classification.evidence[0]) ||
+                  "Filtered by Family Shield (" + classification.category + ")";
+                var fsTarget = makeFamilyShieldUrl(navUrl, fsReason);
+                if (sender.tab && sender.tab.id) {
+                  lastRedirectedUrl[sender.tab.id] = navUrl;
+                  updateBadge(sender.tab.id, "phishing", true);
+                  chrome.tabs.update(sender.tab.id, { url: fsTarget });
+                }
+                sendResponse({ redirectUrl: fsTarget });
+                return;
+              }
+            } catch (e) {
+              console.error("TriVex: Error in NAVIGATED_URL classifier check:", e);
+            }
+          }
+        }
+        sendResponse({ redirectUrl: null });
+      });
+      return true;
+    }
+
     case "ANALYZE_URL": {
       var targetUrl = message.url || "";
       var detector = getDetector();
