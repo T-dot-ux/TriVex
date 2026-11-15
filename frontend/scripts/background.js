@@ -1,108 +1,155 @@
 /*
  * background.js — TriVex MV3 Service Worker.
- *
- * Responsibilities:
- *   1. Intercepts tab navigations to block high-confidence phishing & adult content (Family Shield).
- *   2. Receives and buffers continuous page monitoring signals from content.js.
- *   3. Provides a structured message API for the popup and content scripts.
- *
- * Rule: Service workers cannot use DOM APIs. Core detection and category classification
- * are imported via importScripts from detector.js and family_shield.js.
  */
 
 "use strict";
 
-// Import canonical detector and Family Shield classifier
 try {
-  importScripts("detector.js", "family_shield.js");
+  importScripts("blocklist.js", "detector.js", "family_shield.js");
 } catch (e) {
-  console.error("TriVex: Failed to importScripts in service worker:", e);
+  console.error("TriVex: importScripts failed:", e);
 }
 
-/* ================================================================
-   DETECTOR & CLASSIFIER ACCESSORS
-   ================================================================ */
-
+/* ------------------------------------------------------------------ */
+/* Accessors                                                            */
+/* ------------------------------------------------------------------ */
 function getDetector() {
   if (typeof self.analyzeUrl === "function") return self.analyzeUrl;
-  if (self.PhishGuard && typeof self.PhishGuard.analyzeUrl === "function") {
-    return self.PhishGuard.analyzeUrl;
-  }
+  if (self.PhishGuard && typeof self.PhishGuard.analyzeUrl === "function") return self.PhishGuard.analyzeUrl;
   return null;
 }
 
 function getClassifier() {
-  if (self.FamilyShield && typeof self.FamilyShield.classifyUrl === "function") {
-    return self.FamilyShield.classifyUrl;
-  }
+  if (self.FamilyShield && typeof self.FamilyShield.classifyUrl === "function") return self.FamilyShield.classifyUrl;
   return null;
 }
 
-/* ================================================================
-   URL HELPERS
-   ================================================================ */
-
+/* ------------------------------------------------------------------ */
+/* URL helpers                                                          */
+/* ------------------------------------------------------------------ */
 function makeBlockUrl(blockedUrl, reason) {
-  var base = chrome.runtime.getURL("block.html");
-  return (
-    base +
-    "?url=" +
-    encodeURIComponent(blockedUrl) +
-    "&reason=" +
-    encodeURIComponent(reason || "High-risk phishing indicators detected")
-  );
+  return chrome.runtime.getURL("block.html")
+    + "?url=" + encodeURIComponent(blockedUrl)
+    + "&reason=" + encodeURIComponent(reason || "High-risk phishing indicators detected");
 }
 
 function makeFamilyShieldUrl(blockedUrl, reason) {
-  var base = chrome.runtime.getURL("family_shield.html");
-  return (
-    base +
-    "?url=" +
-    encodeURIComponent(blockedUrl) +
-    "&reason=" +
-    encodeURIComponent(reason || "Filtered content")
-  );
+  return chrome.runtime.getURL("family_shield.html")
+    + "?url=" + encodeURIComponent(blockedUrl)
+    + "&reason=" + encodeURIComponent(reason || "Filtered by Family Shield");
 }
 
 function shouldSkip(url) {
   if (!url || typeof url !== "string") return true;
-  var lower = url.toLowerCase();
-  if (
-    lower.startsWith("chrome://") ||
-    lower.startsWith("chrome-extension://") ||
-    lower.startsWith("extension://") ||
-    lower.startsWith("about:") ||
-    lower.startsWith("data:") ||
-    lower.startsWith("javascript:") ||
-    lower.startsWith("edge://") ||
-    lower.startsWith("brave://") ||
-    lower.startsWith("opera://") ||
-    lower.startsWith("devtools://") ||
-    lower.startsWith("view-source:")
-  ) {
-    return true;
-  }
-  // Prevent redirect loops
-  var blockHtml = chrome.runtime.getURL("block.html");
-  var familyShieldHtml = chrome.runtime.getURL("family_shield.html");
-  if (url.startsWith(blockHtml) || url.startsWith(familyShieldHtml)) {
-    return true;
-  }
+  var l = url.toLowerCase();
+  if (l.startsWith("chrome://") || l.startsWith("chrome-extension://") ||
+      l.startsWith("extension://") || l.startsWith("about:") ||
+      l.startsWith("data:") || l.startsWith("javascript:") ||
+      l.startsWith("edge://") || l.startsWith("brave://") ||
+      l.startsWith("opera://") || l.startsWith("devtools://") ||
+      l.startsWith("view-source:")) return true;
+  if (url.startsWith(chrome.runtime.getURL("block.html"))) return true;
+  if (url.startsWith(chrome.runtime.getURL("family_shield.html"))) return true;
   return false;
 }
 
 var lastRedirectedUrl = {};
+chrome.tabs.onRemoved.addListener(function (tabId) { delete lastRedirectedUrl[tabId]; });
 
-chrome.tabs.onRemoved.addListener(function (tabId) {
-  delete lastRedirectedUrl[tabId];
+/* ------------------------------------------------------------------ */
+/* Declarative Net Request — built from blocklist.js dictionary         */
+/*                                                                      */
+/* One urlFilter rule per keyword (Chrome DNR has a ~1000 char regex   */
+/* limit so regexFilter with 50+ keywords would fail).                 */
+/* One requestDomains rule covers all known adult/gambling domains.     */
+/* IDs start at 3000 for keywords, 2999 for the domain rule.           */
+/* Add to blocklist.js only — no other file needs to change.           */
+/* ------------------------------------------------------------------ */
+
+var DNR_DOMAIN_RULE_ID  = 2999;
+var DNR_KEYWORD_ID_BASE = 3000;  // keyword rules: 3000, 3001, 3002 …
+
+function buildFamilyShieldRules() {
+  var bl = (typeof self !== "undefined" && self.TriVexBlocklist) ? self.TriVexBlocklist : {};
+  var keywords = (bl.ADULT_KEYWORDS    || []).concat(bl.GAMBLING_KEYWORDS || []);
+  var domains  = (bl.ADULT_DOMAINS     || []).concat(bl.GAMBLING_DOMAINS  || []);
+  var fsUrl    = chrome.runtime.getURL("family_shield.html");
+  var rules    = [];
+
+  /* One urlFilter rule per keyword — simple, proven to work */
+  keywords.forEach(function (kw, i) {
+    rules.push({
+      id: DNR_KEYWORD_ID_BASE + i,
+      priority: 1,
+      action: { type: "redirect", redirect: { url: fsUrl } },
+      condition: { urlFilter: "*" + kw + "*", resourceTypes: ["main_frame"] }
+    });
+  });
+
+  /* Single domain rule — most precise, highest priority */
+  if (domains.length > 0) {
+    rules.push({
+      id: DNR_DOMAIN_RULE_ID,
+      priority: 2,
+      action: { type: "redirect", redirect: { url: fsUrl } },
+      condition: { requestDomains: domains, resourceTypes: ["main_frame"] }
+    });
+  }
+
+  return rules;
+}
+
+function getAllDNRIds() {
+  var bl = (typeof self !== "undefined" && self.TriVexBlocklist) ? self.TriVexBlocklist : {};
+  var keywords = (bl.ADULT_KEYWORDS || []).concat(bl.GAMBLING_KEYWORDS || []);
+  var ids = keywords.map(function (_, i) { return DNR_KEYWORD_ID_BASE + i; });
+  ids.push(DNR_DOMAIN_RULE_ID);
+  return ids;
+}
+
+function syncFamilyShieldDNR(enabled) {
+  var allIds = getAllDNRIds();
+  if (enabled) {
+    var rules = buildFamilyShieldRules();
+    chrome.declarativeNetRequest.updateDynamicRules(
+      { addRules: rules, removeRuleIds: allIds },
+      function () {
+        if (chrome.runtime.lastError) {
+          console.error("TriVex DNR error:", chrome.runtime.lastError.message);
+        } else {
+          console.log("TriVex: Family Shield active — " + rules.length + " DNR rules loaded.");
+        }
+      }
+    );
+  } else {
+    chrome.declarativeNetRequest.updateDynamicRules(
+      { addRules: [], removeRuleIds: allIds },
+      function () {
+        if (chrome.runtime.lastError) console.error("TriVex DNR remove error:", chrome.runtime.lastError.message);
+        else console.log("TriVex: Family Shield DNR rules removed.");
+      }
+    );
+  }
+}
+
+chrome.runtime.onInstalled.addListener(function () {
+  chrome.storage.local.get(["familyShieldEnabled"], function (res) {
+    var enabled = res.familyShieldEnabled !== undefined ? !!res.familyShieldEnabled : true;
+    syncFamilyShieldDNR(enabled);
+  });
 });
 
-/* ================================================================
-   TOOLBAR BADGE CONTROLLER (VIRUSTOTAL-STYLE SECURITY STATUS)
-   ================================================================ */
+chrome.storage.onChanged.addListener(function (changes, area) {
+  if (area === "local" && "familyShieldEnabled" in changes) {
+    syncFamilyShieldDNR(!!changes.familyShieldEnabled.newValue);
+  }
+});
 
+/* ------------------------------------------------------------------ */
+/* Badge controller                                                     */
+/* ------------------------------------------------------------------ */
 function updateBadge(tabId, verdict, isFamilyShield) {
-  if (typeof chrome === "undefined" || !chrome.action || !chrome.action.setBadgeText) return;
+  if (!chrome.action) return;
   try {
     if (isFamilyShield) {
       chrome.action.setBadgeText({ tabId: tabId, text: "FS" });
@@ -116,11 +163,12 @@ function updateBadge(tabId, verdict, isFamilyShield) {
     } else {
       chrome.action.setBadgeText({ tabId: tabId, text: "" });
     }
-  } catch (e) {
-    // Ignore closed/unsupported tabs
-  }
+  } catch (e) { /* ignore closed-tab errors */ }
 }
 
+/* ------------------------------------------------------------------ */
+/* Tab activation — refresh badge                                       */
+/* ------------------------------------------------------------------ */
 chrome.tabs.onActivated.addListener(function (activeInfo) {
   chrome.tabs.get(activeInfo.tabId, function (tab) {
     if (chrome.runtime.lastError || !tab || !tab.url || shouldSkip(tab.url)) {
@@ -132,12 +180,9 @@ chrome.tabs.onActivated.addListener(function (activeInfo) {
       if (fsEnabled) {
         var classifier = getClassifier();
         if (classifier) {
-          var classification = classifier(tab.url);
-          if (
-            classification &&
-            (classification.category === "adult" || classification.category === "gambling") &&
-            (classification.confidence === "high" || classification.confidence === "medium")
-          ) {
+          var c = classifier(tab.url);
+          if (c && (c.category === "adult" || c.category === "gambling") &&
+              (c.confidence === "high" || c.confidence === "medium")) {
             updateBadge(activeInfo.tabId, "phishing", true);
             return;
           }
@@ -145,98 +190,73 @@ chrome.tabs.onActivated.addListener(function (activeInfo) {
       }
       var detector = getDetector();
       if (detector) {
-        var analysis = detector(tab.url);
-        if (analysis && analysis.finalVerdict) {
-          updateBadge(activeInfo.tabId, analysis.finalVerdict, false);
-          return;
-        }
+        var a = detector(tab.url);
+        if (a && a.finalVerdict) { updateBadge(activeInfo.tabId, a.finalVerdict, false); return; }
       }
       updateBadge(activeInfo.tabId, "clean", false);
     });
   });
 });
 
-/* ================================================================
-   TAB NAVIGATION INTERCEPTION (PHISHING & FAMILY SHIELD)
-   ================================================================ */
-
+/* ------------------------------------------------------------------ */
+/* Navigation interception fallback (catches what DNR may miss)         */
+/* ------------------------------------------------------------------ */
 chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
   var url = changeInfo.url || tab.pendingUrl || tab.url;
-  if (!url || shouldSkip(url)) return;
-  if (lastRedirectedUrl[tabId] === url) return;
+  if (!url || shouldSkip(url) || lastRedirectedUrl[tabId] === url) return;
 
   chrome.storage.local.get(["familyShieldEnabled"], function (stored) {
     var fsEnabled = stored.familyShieldEnabled !== undefined ? !!stored.familyShieldEnabled : true;
 
-    // 1. Phishing check (Always active)
+    // Phishing check
     var detector = getDetector();
     if (detector) {
       try {
-        var analysis = detector(url);
-        // Only trigger hard block on high-confidence "phishing" (not on "suspicious" or "not_flagged")
-        if (
-          analysis &&
-          !analysis.error &&
-          analysis.finalVerdict === "phishing"
-        ) {
-          var reason =
-            (analysis.systemC && analysis.systemC.reasons && analysis.systemC.reasons[0]) ||
-            "High-risk phishing indicators detected";
+        var a = detector(url);
+        if (a && !a.error && a.finalVerdict === "phishing") {
+          var reason = (a.systemC && a.systemC.reasons && a.systemC.reasons[0]) || "High-risk phishing indicators detected";
           lastRedirectedUrl[tabId] = url;
           updateBadge(tabId, "phishing", false);
           chrome.tabs.update(tabId, { url: makeBlockUrl(url, reason) });
           return;
-        } else if (analysis && analysis.finalVerdict === "suspicious") {
+        } else if (a && a.finalVerdict === "suspicious") {
           updateBadge(tabId, "suspicious", false);
         } else {
           updateBadge(tabId, "not_flagged", false);
         }
-      } catch (err) {
-        console.error("TriVex: Analysis error during navigation:", err);
-      }
+      } catch (e) { console.error("TriVex: analysis error:", e); }
     }
 
-    // 2. Family Shield check (Active when enabled)
+    // Family Shield fallback check (secondary to DNR)
     if (fsEnabled) {
       var classifier = getClassifier();
       if (classifier) {
         try {
-          var classification = classifier(url);
-          if (
-            classification &&
-            (classification.category === "adult" || classification.category === "gambling") &&
-            (classification.confidence === "high" || classification.confidence === "medium")
-          ) {
-            var fsReason =
-              (classification.evidence && classification.evidence[0]) ||
-              "Filtered by Family Shield (" + classification.category + ")";
+          var c = classifier(url);
+          if (c && (c.category === "adult" || c.category === "gambling") &&
+              (c.confidence === "high" || c.confidence === "medium")) {
+            var fsReason = (c.evidence && c.evidence[0]) || "Filtered by Family Shield (" + c.category + ")";
             lastRedirectedUrl[tabId] = url;
             updateBadge(tabId, "phishing", true);
-            chrome.tabs.update(tabId, {
-              url: makeFamilyShieldUrl(url, fsReason),
-            });
+            chrome.tabs.update(tabId, { url: makeFamilyShieldUrl(url, fsReason) });
             return;
           }
-        } catch (err) {
-          console.error("TriVex: Classifier error during navigation:", err);
-        }
+        } catch (e) { console.error("TriVex: classifier error:", e); }
       }
     }
 
-    if (lastRedirectedUrl[tabId] && lastRedirectedUrl[tabId] !== url) {
-      delete lastRedirectedUrl[tabId];
-    }
+    if (lastRedirectedUrl[tabId] && lastRedirectedUrl[tabId] !== url) delete lastRedirectedUrl[tabId];
   });
 });
 
-/* ================================================================
-   STRUCTURED MESSAGE API
-   ================================================================ */
-
+/* ------------------------------------------------------------------ */
+/* Message API                                                          */
+/* ------------------------------------------------------------------ */
 chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
   if (!message || typeof message !== "object") return false;
 
   switch (message.type) {
+
     case "PAGE_BLOCKED": {
       if (sender.tab && sender.tab.id) {
         var isFS = message.blockType === "family_shield";
@@ -249,21 +269,15 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 
     case "NAVIGATED_URL": {
       var navUrl = message.url || "";
-      if (!navUrl || shouldSkip(navUrl)) {
-        sendResponse({ redirectUrl: null });
-        return false;
-      }
+      if (!navUrl || shouldSkip(navUrl)) { sendResponse({ redirectUrl: null }); return false; }
       chrome.storage.local.get(["familyShieldEnabled"], function (stored) {
         var fsEnabled = stored.familyShieldEnabled !== undefined ? !!stored.familyShieldEnabled : true;
-        // 1. Phishing check
         var detector = getDetector();
         if (detector) {
           try {
-            var analysis = detector(navUrl);
-            if (analysis && !analysis.error && analysis.finalVerdict === "phishing") {
-              var reason =
-                (analysis.systemC && analysis.systemC.reasons && analysis.systemC.reasons[0]) ||
-                "High-risk phishing indicators detected";
+            var a = detector(navUrl);
+            if (a && !a.error && a.finalVerdict === "phishing") {
+              var reason = (a.systemC && a.systemC.reasons && a.systemC.reasons[0]) || "High-risk phishing indicators detected";
               var target = makeBlockUrl(navUrl, reason);
               if (sender.tab && sender.tab.id) {
                 lastRedirectedUrl[sender.tab.id] = navUrl;
@@ -273,24 +287,16 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
               sendResponse({ redirectUrl: target });
               return;
             }
-          } catch (e) {
-            console.error("TriVex: Error in NAVIGATED_URL phishing check:", e);
-          }
+          } catch (e) { console.error(e); }
         }
-        // 2. Family Shield check
         if (fsEnabled) {
           var classifier = getClassifier();
           if (classifier) {
             try {
-              var classification = classifier(navUrl);
-              if (
-                classification &&
-                (classification.category === "adult" || classification.category === "gambling") &&
-                (classification.confidence === "high" || classification.confidence === "medium")
-              ) {
-                var fsReason =
-                  (classification.evidence && classification.evidence[0]) ||
-                  "Filtered by Family Shield (" + classification.category + ")";
+              var c = classifier(navUrl);
+              if (c && (c.category === "adult" || c.category === "gambling") &&
+                  (c.confidence === "high" || c.confidence === "medium")) {
+                var fsReason = (c.evidence && c.evidence[0]) || "Filtered by Family Shield (" + c.category + ")";
                 var fsTarget = makeFamilyShieldUrl(navUrl, fsReason);
                 if (sender.tab && sender.tab.id) {
                   lastRedirectedUrl[sender.tab.id] = navUrl;
@@ -300,9 +306,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
                 sendResponse({ redirectUrl: fsTarget });
                 return;
               }
-            } catch (e) {
-              console.error("TriVex: Error in NAVIGATED_URL classifier check:", e);
-            }
+            } catch (e) { console.error(e); }
           }
         }
         sendResponse({ redirectUrl: null });
@@ -312,16 +316,12 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 
     case "ANALYZE_URL": {
       var targetUrl = message.url || "";
-      var detector = getDetector();
-      if (!detector) {
-        sendResponse({ ok: false, error: "Detection engine unavailable" });
-        return false;
-      }
+      var det = getDetector();
+      if (!det) { sendResponse({ ok: false, error: "Detection engine unavailable" }); return false; }
       try {
-        var result = detector(targetUrl);
-        sendResponse({ ok: true, result: result });
-      } catch (err) {
-        sendResponse({ ok: false, error: String(err) });
+        sendResponse({ ok: true, result: det(targetUrl) });
+      } catch (e) {
+        sendResponse({ ok: false, error: String(e) });
       }
       return false;
     }
@@ -331,11 +331,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
       var tabUrl = (sender.tab && sender.tab.url) || signals.url || "";
       chrome.storage.local.get(["pageSignals"], function (res) {
         var history = Array.isArray(res.pageSignals) ? res.pageSignals : [];
-        history.unshift({
-          url: tabUrl,
-          signals: signals,
-          timestamp: Date.now(),
-        });
+        history.unshift({ url: tabUrl, signals: signals, timestamp: Date.now() });
         if (history.length > 10) history.length = 10;
         chrome.storage.local.set({ pageSignals: history });
       });
@@ -347,15 +343,10 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
       var reqUrl = message.url || "";
       chrome.storage.local.get(["pageSignals"], function (res) {
         var history = Array.isArray(res.pageSignals) ? res.pageSignals : [];
-        var match = null;
-        if (reqUrl) {
-          match = history.find(function (item) {
-            return item.url === reqUrl;
-          });
-        }
+        var match = reqUrl ? history.find(function (i) { return i.url === reqUrl; }) : null;
         sendResponse({ ok: true, signals: match ? match.signals : (history[0] ? history[0].signals : null) });
       });
-      return true; // Keep message port open for async response
+      return true;
     }
 
     case "TOGGLE_FAMILY_SHIELD": {

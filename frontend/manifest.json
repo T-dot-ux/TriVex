@@ -3,7 +3,7 @@
   "name": "TriVex",
   "version": "0.1.0",
   "description": "Explainable phishing-URL checker. Analyzes URL text locally and never visits or fetches the URL.",
-  "permissions": ["activeTab", "tabs", "storage"],
+  "permissions": ["activeTab", "tabs", "storage", "declarativeNetRequest"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "action": {
     "default_title": "TriVex",
@@ -28,6 +28,7 @@
     {
       "matches": ["http://*/*", "https://*/*"],
       "js": [
+        "scripts/blocklist.js",
         "scripts/detector.js",
         "scripts/family_shield.js",
         "scripts/content.js"
