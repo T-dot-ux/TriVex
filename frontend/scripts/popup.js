@@ -632,9 +632,10 @@
         url.startsWith("chrome://") ||
         url.startsWith("chrome-extension://") ||
         url.startsWith("about:") ||
-        url.startsWith("edge://")
+        url.startsWith("edge://") ||
+        url.startsWith("brave://")
       ) {
-        setView("invalid", "Internal browser pages (" + url.split(":")[0] + "://) cannot be analyzed.");
+        setView("initial");
         return;
       }
 
@@ -647,6 +648,9 @@
   document.addEventListener("DOMContentLoaded", function () {
     initFamilyShield();
     setView("initial");
+
+    // Automatically inspect current active tab on popup open (VirusTotal pattern)
+    scanCurrentTab();
 
     var scanTabBtn = $("scanTab");
     if (scanTabBtn) scanTabBtn.addEventListener("click", scanCurrentTab);

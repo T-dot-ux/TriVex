@@ -172,7 +172,7 @@
     </div>
 
     <div class="actions">
-      <button class="btn btn-back" type="button" onclick="history.back()">← Go Back</button>
+      <button class="btn btn-back" id="btnBack" type="button">← Go Back</button>
     </div>
 
     <details>
@@ -199,37 +199,6 @@
     </details>
   </div>
 
-  <script>
-    (function () {
-      "use strict";
-
-      /* Safely read the ?url= and ?reason= query parameters */
-      function getParam(name) {
-        try {
-          return new URLSearchParams(location.search).get(name) || "";
-        } catch (e) {
-          return "";
-        }
-      }
-
-      var rawUrl  = getParam("url");
-      var reason  = getParam("reason");
-
-      /* Display blocked URL using textContent — never innerHTML */
-      var urlEl = document.getElementById("blockedUrl");
-      if (rawUrl) {
-        urlEl.textContent = rawUrl;
-      } else {
-        urlEl.textContent = "(URL not provided)";
-      }
-
-      /* Display reason */
-      if (reason) {
-        var reasonEl = document.getElementById("reasonBox");
-        /* Prepend label, then set safe text */
-        reasonEl.textContent = "Reason: " + reason;
-      }
-    })();
-  </script>
+  <script src="scripts/block.js"></script>
 </body>
 </html>

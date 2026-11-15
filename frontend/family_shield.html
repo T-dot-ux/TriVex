@@ -295,37 +295,10 @@
     </div>
 
     <div class="actions">
-      <button class="btn btn-back" type="button" onclick="history.back()">← Go Back</button>
+      <button class="btn btn-back" id="btnBack" type="button">← Go Back</button>
     </div>
   </div>
 
-  <script>
-    (function () {
-      "use strict";
-
-      function getParam(name) {
-        try {
-          return new URLSearchParams(location.search).get(name) || "";
-        } catch (e) {
-          return "";
-        }
-      }
-
-      var rawUrl = getParam("url");
-      var reason = getParam("reason");
-
-      /* Display blocked URL via textContent — never innerHTML */
-      var urlEl = document.getElementById("blockedUrl");
-      urlEl.textContent = rawUrl || "(URL not provided)";
-
-      /* Display reason text safely */
-      if (reason) {
-        var reasonEl = document.getElementById("reasonBox");
-        reasonEl.textContent =
-          "This page was blocked because: " + reason +
-          ". TriVex Family Shield helps keep browsing safe and family-friendly.";
-      }
-    })();
-  </script>
+  <script src="scripts/family_shield_page.js"></script>
 </body>
 </html>

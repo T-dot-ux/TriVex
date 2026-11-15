@@ -32,7 +32,13 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["block.html", "family_shield.html", "privacy.html"],
+      "resources": [
+        "block.html",
+        "family_shield.html",
+        "privacy.html",
+        "scripts/block.js",
+        "scripts/family_shield_page.js"
+      ],
       "matches": ["<all_urls>"]
     }
   ]

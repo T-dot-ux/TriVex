@@ -94,6 +94,65 @@ chrome.tabs.onRemoved.addListener(function (tabId) {
 });
 
 /* ================================================================
+   TOOLBAR BADGE CONTROLLER (VIRUSTOTAL-STYLE SECURITY STATUS)
+   ================================================================ */
+
+function updateBadge(tabId, verdict, isFamilyShield) {
+  if (typeof chrome === "undefined" || !chrome.action || !chrome.action.setBadgeText) return;
+  try {
+    if (isFamilyShield) {
+      chrome.action.setBadgeText({ tabId: tabId, text: "FS" });
+      chrome.action.setBadgeBackgroundColor({ tabId: tabId, color: "#d9534f" });
+    } else if (verdict === "phishing") {
+      chrome.action.setBadgeText({ tabId: tabId, text: "!" });
+      chrome.action.setBadgeBackgroundColor({ tabId: tabId, color: "#d9534f" });
+    } else if (verdict === "suspicious") {
+      chrome.action.setBadgeText({ tabId: tabId, text: "!" });
+      chrome.action.setBadgeBackgroundColor({ tabId: tabId, color: "#f0ad4e" });
+    } else {
+      chrome.action.setBadgeText({ tabId: tabId, text: "" });
+    }
+  } catch (e) {
+    // Ignore closed/unsupported tabs
+  }
+}
+
+chrome.tabs.onActivated.addListener(function (activeInfo) {
+  chrome.tabs.get(activeInfo.tabId, function (tab) {
+    if (chrome.runtime.lastError || !tab || !tab.url || shouldSkip(tab.url)) {
+      updateBadge(activeInfo.tabId, "clean", false);
+      return;
+    }
+    chrome.storage.local.get(["familyShieldEnabled"], function (stored) {
+      var fsEnabled = stored.familyShieldEnabled !== undefined ? !!stored.familyShieldEnabled : true;
+      if (fsEnabled) {
+        var classifier = getClassifier();
+        if (classifier) {
+          var classification = classifier(tab.url);
+          if (
+            classification &&
+            (classification.category === "adult" || classification.category === "gambling") &&
+            (classification.confidence === "high" || classification.confidence === "medium")
+          ) {
+            updateBadge(activeInfo.tabId, "phishing", true);
+            return;
+          }
+        }
+      }
+      var detector = getDetector();
+      if (detector) {
+        var analysis = detector(tab.url);
+        if (analysis && analysis.finalVerdict) {
+          updateBadge(activeInfo.tabId, analysis.finalVerdict, false);
+          return;
+        }
+      }
+      updateBadge(activeInfo.tabId, "clean", false);
+    });
+  });
+});
+
+/* ================================================================
    TAB NAVIGATION INTERCEPTION (PHISHING & FAMILY SHIELD)
    ================================================================ */
 
@@ -121,8 +180,13 @@ chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
             (analysis.systemC && analysis.systemC.reasons && analysis.systemC.reasons[0]) ||
             "High-risk phishing indicators detected";
           lastRedirectedUrl[tabId] = url;
+          updateBadge(tabId, "phishing", false);
           chrome.tabs.update(tabId, { url: makeBlockUrl(url, reason) });
           return;
+        } else if (analysis && analysis.finalVerdict === "suspicious") {
+          updateBadge(tabId, "suspicious", false);
+        } else {
+          updateBadge(tabId, "not_flagged", false);
         }
       } catch (err) {
         console.error("TriVex: Analysis error during navigation:", err);
@@ -144,6 +208,7 @@ chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
               (classification.evidence && classification.evidence[0]) ||
               "Filtered by Family Shield (" + classification.category + ")";
             lastRedirectedUrl[tabId] = url;
+            updateBadge(tabId, "phishing", true);
             chrome.tabs.update(tabId, {
               url: makeFamilyShieldUrl(url, fsReason),
             });

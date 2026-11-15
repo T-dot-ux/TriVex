@@ -30,23 +30,32 @@
     "pornhub.com", "xvideos.com", "redtube.com", "xnxx.com",
     "brazzers.com", "playboy.com", "hustler.com", "penthouse.com",
     "xxx.com", "sex.com", "youporn.com", "tube8.com",
-    "spankbang.com", "xhamster.com", "beeg.com"
+    "spankbang.com", "xhamster.com", "beeg.com", "chaturbate.com",
+    "stripchat.com", "livejasmin.com", "bongacams.com", "cam4.com",
+    "eporner.com", "hqporner.com", "tnaflix.com", "porn.com",
+    "motherless.com", "heavy-r.com", "fapello.com", "erome.com",
+    "porntrex.com", "txxx.com", "thumbzilla.com", "fuq.com",
+    "camwhores.tv", "spankwire.com", "gotporn.com", "daftsex.com"
   ];
 
   /**
    * Adult-content keywords found in URL paths/subdomains.
-   * Category names are used — not explicit terms — to keep this file safe.
    */
   var ADULT_URL_KEYWORDS = [
+    "porn",
     "pornography",
-    "explicit-content",
     "adult-content",
+    "explicit-content",
     "xxx",
     "erotic",
     "nudity",
     "onlyfans",
     "hentai",
-    "nsfw-content"
+    "nsfw",
+    "stripchat",
+    "chaturbate",
+    "camgirl",
+    "escort"
   ];
 
   /**
@@ -55,15 +64,26 @@
   var GAMBLING_DOMAINS = [
     "bet365.com", "draftkings.com", "fanduel.com", "pokerstars.com",
     "williamhill.com", "betway.com", "888casino.com", "bovada.lv",
-    "betfair.com", "ladbrokes.com", "coral.co.uk", "unibet.com"
+    "betfair.com", "ladbrokes.com", "coral.co.uk", "unibet.com",
+    "stake.com", "roobet.com", "rollbit.com", "duelbits.com",
+    "bc.game", "1xbet.com", "parimatch.com", "bwin.com",
+    "betonline.ag", "ggpoker.com", "partypoker.com"
   ];
 
   /**
    * Gambling-related keywords in URLs.
    */
   var GAMBLING_URL_KEYWORDS = [
-    "casino", "betting", "gambling", "poker-room",
-    "sports-bet", "online-slots", "jackpot-casino"
+    "casino",
+    "betting",
+    "gambling",
+    "poker",
+    "sports-bet",
+    "online-slots",
+    "jackpot-casino",
+    "roulette",
+    "blackjack",
+    "sportsbook"
   ];
 
   /* ------------------------------------------------------------------ */
@@ -93,13 +113,17 @@
 
   /**
    * Check whether a lower-cased URL string contains any keyword from a list.
+   * Uses non-alphanumeric word boundaries to prevent substring false-positives.
    * @param {string}   lowerUrl
    * @param {string[]} keywords
    * @returns {string|null}  Matched keyword, or null.
    */
   function matchesKeyword(lowerUrl, keywords) {
     for (var i = 0; i < keywords.length; i++) {
-      if (lowerUrl.indexOf(keywords[i]) !== -1) return keywords[i];
+      var kw = keywords[i];
+      var pattern = "(?:^|[^a-z0-9])" + kw.replace(/-/g, "[-_ ]") + "(?:[^a-z0-9]|$)";
+      var re = new RegExp(pattern, "i");
+      if (re.test(lowerUrl)) return kw;
     }
     return null;
   }
