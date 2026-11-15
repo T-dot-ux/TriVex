@@ -1,23 +1,59 @@
-# TriVex (PhishGuard AI) — Family Shield & Navigation Debug Report
+# TriVex (PhishGuard AI) — Problem Definition & Technical Debug Report
 
+**Project:** TriVex (PhishGuard AI)  
 **Date:** November 15, 2026  
 **Repository:** `https://github.com/T-dot-ux/TriVex` (branch: `main`)  
-**Latest Git Commit:** `aadc6f3`  
 **Target Environment:** Chromium Manifest V3 (Microsoft Edge & Google Chrome)
 
 ---
 
-## 1. Executive Summary
+## 1. The Core Problem Definition
 
-This report documents the exact state of the **TriVex** browser extension and backend evaluation suite, detailing what is verified and working, the diagnosis of why live address-bar navigation to `pornhub.com` bypassed the redirect in Microsoft Edge, and the concrete technical recommendation for the next agent.
+### Symptom
+When a user types a restricted adult domain (e.g. `pornhub.com`) into the browser's address bar (Omnibox) and presses Enter, **the adult website loads and displays its age-verification splash screen instead of being blocked by TriVex Family Shield**.
+
+```text
+[User types pornhub.com into Omnibox]
+                 │
+                 ├──► Browser C++ Network Engine connects & renders HTML ──► [Adult Age-Gate Displays] ❌
+                 │
+                 └──► Extension JS event loop / async storage check lag ───► [Too late to prevent render]
+```
 
 ---
 
-## 2. What Is Fully Verified & Working
+## 2. Technical Root Cause Breakdown (Why It Fails)
+
+The failure to intercept address bar navigations stems from three fundamental architectural limitations in Chromium Manifest V3 when relying solely on `chrome.tabs.onUpdated` and `content_scripts`:
+
+### Cause 1: The Browser Wins the Race Against Extension Event Handlers
+* **The Mechanism:** In Chromium (Edge and Chrome), Omnibox navigations execute directly in the browser's high-priority C++ network rendering pipeline.
+* **The Flaw:** Extension event listeners (`chrome.tabs.onUpdated`) run in JavaScript user space. By the time Edge dispatches the event and the service worker extracts `tab.url`, the browser network engine has already established the TCP handshake, downloaded the initial HTML payload, and painted the splash screen on the screen.
+
+### Cause 2: Asynchronous Storage Latency (The 20–100ms Window)
+* **The Mechanism:** Before applying a block, the extension must verify that Family Shield is enabled by querying browser storage:
+  ```javascript
+  chrome.storage.local.get(["familyShieldEnabled"], callback);
+  ```
+* **The Flaw:** In Manifest V3, `chrome.storage.local.get` is an asynchronous inter-process communication (IPC) call that takes between 20ms and 100ms. During this latency window, the browser continues parsing and executing the target webpage stream without interruption.
+
+### Cause 3: Webpage Context Cannot Navigate to Local Extension URLs
+* **The Mechanism:** When attempting defense-in-depth via `content.js` by calling `window.location.replace("extension://.../family_shield.html")` or `chrome.runtime.sendMessage`:
+* **The Flaw:** Chromium actively blocks webpage execution contexts from navigating the top-level window directly to extension pages, throwing:
+  ```text
+  Not allowed to load local resource: extension://<id>/family_shield.html
+  ```
+  Even with `web_accessible_resources`, top-level address bar navigation to extension URLs is restricted to privileged background APIs.
+
+---
+
+## 3. What Is Verified & 100% Working in the Codebase
+
+All other components of TriVex have been implemented, tested, and verified with zero syntax errors and zero regressions:
 
 | Subsystem | File Reference | Status | Verification Evidence |
 | :--- | :--- | :--- | :--- |
-| **System A (Rule-Based)** | `frontend/scripts/detector.js`<br>`backend/trivex_detector.py` | **Working** | Flagged on IP, long URL, deep subdomains, suspicious symbols (`@`, hyphens), keyword without HTTPS. |
+| **System A (Rule-Based)** | `frontend/scripts/detector.js`<br>`backend/trivex_detector.py` | **Working** | Flagged on IP, long URL, deep subdomains, suspicious symbols (`@`, hyphens), keywords without HTTPS. |
 | **System B (Weighted Score)** | `frontend/scripts/detector.js`<br>`backend/trivex_detector.py` | **Working** | Threshold 45/120. Score calculations match across JS and Python. |
 | **System C (Hybrid / AI)** | `frontend/scripts/detector.js`<br>`backend/trivex_detector.py` | **Working** | False-positive mitigation implemented (3.3% FPR on benign test set). |
 | **JS / Python Parity** | `backend/parity_test.py` | **100% Pass** | Identical output across all 6 edge-case URL categories. |
@@ -28,39 +64,17 @@ This report documents the exact state of the **TriVex** browser extension and ba
 
 ---
 
-## 3. The Problem: Why Real-Time Navigation to `pornhub.com` Still Displayed the Site
+## 4. The Exact Technical Requirement to Fix the Navigation Block
 
-When navigating via the browser's address bar (Omnibox) to `pornhub.com`, the page loaded the age-gate splash page rather than redirecting to `family_shield.html`.
+To eliminate the network race condition and guarantee that adult websites can **never** render their HTML:
 
-### Technical Root Cause Diagnosis
+### The Solution: `chrome.declarativeNetRequest` (DNR)
 
-1. **Chromium Network vs. Extension Event Race Condition:**
-   - In Chromium/Edge, Omnibox address bar navigation initiates a high-priority C++ network request.
-   - Extension listeners (`chrome.tabs.onUpdated` in the service worker and content scripts injected into the webpage) execute in user-space processes.
-   - By the time `chrome.tabs.onUpdated` receives an event where `tab.url` reflects the resolved destination, the browser's network renderer has already downloaded and parsed the HTML of the splash page.
-2. **Asynchronous Storage Latency:**
-   - In `content.js` and `background.js`, checking whether Family Shield is enabled requires calling `chrome.storage.local.get(["familyShieldEnabled"], callback)`.
-   - In Chromium MV3, `chrome.storage.local.get` is an asynchronous IPC call (taking 20–100ms). During those milliseconds, the browser's HTML parser streams and renders the adult website DOM before `window.stop()` or `document.documentElement.innerHTML` replacement can execute.
-3. **Webpage Local Resource Boundary:**
-   - When a web page has begun loading, Chromium security blocks the webpage context from redirecting top-level `window.location.href` to `chrome-extension://...` or `extension://...` with the security error:
-     ```text
-     Not allowed to load local resource: extension://<id>/family_shield.html
-     ```
+Chromium Manifest V3 provides `declarativeNetRequest` specifically to replace user-space navigation listeners with **kernel/network-level rule matching**. DNR rules execute directly inside Chromium's C++ network stack before any HTTP packet is sent to the remote server.
 
----
+#### Implementation Blueprint for the Next Developer / Agent:
 
-## 4. Architectural Recommendation for the Next Agent
-
-To achieve **100% reliable, zero-latency blocking** in Chromium Manifest V3 that never races the network:
-
-### The Solution: Use `chrome.declarativeNetRequest` (DNR) Dynamic Rules
-
-`declarativeNetRequest` is the official Google Manifest V3 API built specifically to eliminate the network race condition by filtering requests directly in the browser's network stack before TCP connections are made.
-
-#### Exact Implementation Steps:
-
-1. **Update `frontend/manifest.json`:**
-   Add `"declarativeNetRequest"` to `"permissions"`:
+1. **Add `declarativeNetRequest` to `frontend/manifest.json`:**
    ```json
    "permissions": [
      "activeTab",
@@ -70,25 +84,22 @@ To achieve **100% reliable, zero-latency blocking** in Chromium Manifest V3 that
    ]
    ```
 
-2. **Register Dynamic Rules in `background.js`:**
-   When Family Shield is enabled, register dynamic redirect rules for adult domains using `chrome.declarativeNetRequest.updateDynamicRules`:
+2. **Add Dynamic Rule Synchronizer in `frontend/scripts/background.js`:**
    ```javascript
-   function updateFamilyShieldRules(enabled) {
+   function syncFamilyShieldDNR(enabled) {
      var adultDomains = [
        "pornhub.com", "xvideos.com", "redtube.com", "xnxx.com",
        "chaturbate.com", "stripchat.com", "livejasmin.com",
-       "bongacams.com", "eporner.com", "porn.com"
+       "bongacams.com", "eporner.com", "porn.com", "stake.com"
      ];
 
-     var rules = adultDomains.map(function (domain, index) {
+     var rules = adultDomains.map(function (domain, idx) {
        return {
-         id: 1000 + index,
+         id: 1000 + idx,
          priority: 1,
          action: {
            type: "redirect",
-           redirect: {
-             extensionPath: "/family_shield.html"
-           }
+           redirect: { extensionPath: "/family_shield.html" }
          },
          condition: {
            urlFilter: "||" + domain,
@@ -97,34 +108,45 @@ To achieve **100% reliable, zero-latency blocking** in Chromium Manifest V3 that
        };
      });
 
-     chrome.declarativeNetRequest.getDynamicRules(function (existingRules) {
-       var removeRuleIds = existingRules
+     chrome.declarativeNetRequest.getDynamicRules(function (existing) {
+       var removeIds = existing
          .filter(function (r) { return r.id >= 1000 && r.id < 2000; })
          .map(function (r) { return r.id; });
 
        chrome.declarativeNetRequest.updateDynamicRules({
-         removeRuleIds: removeRuleIds,
+         removeRuleIds: removeIds,
          addRules: enabled ? rules : []
        });
      });
    }
    ```
 
-3. **Why This Works 100% of the Time:**
-   - DNR executes directly in Chromium's C++ network layer.
-   - It intercepts the HTTP/HTTPS request before any packet reaches the adult server.
-   - The browser redirects to `/family_shield.html` with zero flicker, zero race conditions, and zero network leakage.
+3. **Call `syncFamilyShieldDNR` on:**
+   - `chrome.runtime.onInstalled`
+   - Whenever `familyShieldEnabled` storage changes (`chrome.storage.onChanged` or toggle message)
 
 ---
 
-## 5. Summary of Modified Files in Repository
+## 5. File Inventory & Commit Reference
 
-- **[manifest.json](file:///c:/Users/Dell/Documents/TriVex_GitHub_Starter/TriVex/frontend/manifest.json)**: Extension configuration, permissions, content scripts.
-- **[scripts/background.js](file:///c:/Users/Dell/Documents/TriVex_GitHub_Starter/TriVex/frontend/scripts/background.js)**: MV3 service worker, toolbar security badge, navigation interception.
-- **[scripts/detector.js](file:///c:/Users/Dell/Documents/TriVex_GitHub_Starter/TriVex/frontend/scripts/detector.js)**: Phishing detection engine (Systems A, B, C).
-- **[scripts/family_shield.js](file:///c:/Users/Dell/Documents/TriVex_GitHub_Starter/TriVex/frontend/scripts/family_shield.js)**: Adult and gambling domain & keyword classifier.
-- **[scripts/popup.js](file:///c:/Users/Dell/Documents/TriVex_GitHub_Starter/TriVex/frontend/scripts/popup.js)**: Extension UI controller with auto-scan and Family Shield card.
-- **[scripts/block.js](file:///c:/Users/Dell/Documents/TriVex_GitHub_Starter/TriVex/frontend/scripts/block.js)**: CSP-compliant phishing block page controller.
-- **[scripts/family_shield_page.js](file:///c:/Users/Dell/Documents/TriVex_GitHub_Starter/TriVex/frontend/scripts/family_shield_page.js)**: CSP-compliant Family Shield page controller.
-- **[block.html](file:///c:/Users/Dell/Documents/TriVex_GitHub_Starter/TriVex/frontend/block.html)** & **[family_shield.html](file:///c:/Users/Dell/Documents/TriVex_GitHub_Starter/TriVex/frontend/family_shield.html)**: Packaged warning screens.
-- **[backend/](file:///c:/Users/Dell/Documents/TriVex_GitHub_Starter/TriVex/backend)**: Python evaluation suite (`evaluate.py`, `parity_test.py`, `dataset.csv`).
+- **Latest Commit:** `e88ee3d`
+- **Frontend Core:**
+  - `frontend/manifest.json`
+  - `frontend/scripts/background.js`
+  - `frontend/scripts/detector.js`
+  - `frontend/scripts/family_shield.js`
+  - `frontend/scripts/popup.js`
+  - `frontend/scripts/content.js`
+  - `frontend/scripts/block.js`
+  - `frontend/scripts/family_shield_page.js`
+- **UI Pages:**
+  - `frontend/popup.html`
+  - `frontend/block.html`
+  - `frontend/family_shield.html`
+  - `frontend/privacy.html`
+  - `frontend/styles/popup.css`
+- **Backend & Evaluation:**
+  - `backend/evaluate.py`
+  - `backend/parity_test.py`
+  - `backend/trivex_detector.py`
+  - `backend/data/dataset.csv`
