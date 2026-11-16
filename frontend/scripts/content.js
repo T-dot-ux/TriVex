@@ -1,15 +1,15 @@
 /*
- * content.js — TriVex page monitoring content script (Phase 8).
+ * content.js — TriVex page monitoring & active in-DOM Family Shield content script.
  *
- * Reads only structural/metadata signals from the page:
- *   - document title
- *   - meta description content
- *   - form action URLs (never form values or passwords)
- *   - count of password-type inputs (count only, never reads values)
- *   - count of external links
- *
- * Signals are sent to the background service worker via chrome.runtime.sendMessage.
- * A debounced MutationObserver fires only on meaningful DOM changes.
+ * Responsibilities:
+ *   1. Real-time in-DOM Adult Age Gate & Vulgar Content Scanner (Family Shield).
+ *      - Immediately halts and blocks pages requesting adult age confirmation (English, Hindi, multilingual).
+ *      - Immediately halts and blocks pages containing multiple vulgar / adult words.
+ *      - Replaces DOM with Family Shield educational screen and notifies background.
+ *   2. Real-time client-side URL block enforcement (Phishing & Family Shield URL classification).
+ *   3. Reads only structural/metadata signals from the page for PhishGuard (Phase 8):
+ *      - document title, meta description, form action URLs, password input count, external link count.
+ *   4. Debounced MutationObserver fires on DOM changes.
  *
  * NEVER reads:
  *   - Form field values
@@ -26,13 +26,51 @@
     return;
   }
 
+  var isPageBlocked = false;
+  var isFamilyShieldActive = true;
+
+  /* Sync Family Shield status from storage */
+  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+    try {
+      chrome.storage.local.get(["familyShieldEnabled"], function (res) {
+        if (res && res.familyShieldEnabled !== undefined) {
+          isFamilyShieldActive = !!res.familyShieldEnabled;
+        }
+      });
+      if (chrome.storage.onChanged) {
+        chrome.storage.onChanged.addListener(function (changes, area) {
+          if (area === "local" && changes.familyShieldEnabled) {
+            isFamilyShieldActive = !!changes.familyShieldEnabled.newValue;
+          }
+        });
+      }
+    } catch (e) {}
+  }
+
   /* ------------------------------------------------------------------ */
   /* REAL-TIME CLIENT-SIDE BLOCK ENFORCEMENT                             */
   /* ------------------------------------------------------------------ */
 
   function renderBlockScreen(type, blockedUrl, reasonText) {
+    if (isPageBlocked) return;
+    isPageBlocked = true;
+
     try {
       window.stop();
+    } catch (e) {}
+
+    // Disconnect mutation observer to prevent any further work
+    if (observer) {
+      try { observer.disconnect(); } catch (e) {}
+    }
+
+    // Stop all media playback immediately
+    try {
+      var media = document.querySelectorAll("video, audio");
+      for (var i = 0; i < media.length; i++) {
+        media[i].pause();
+        media[i].src = "";
+      }
     } catch (e) {}
 
     if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
@@ -68,12 +106,13 @@
       '<title>' + (isFS ? "TriVex Family Shield" : "TriVex — Phishing Warning") + '</title>' +
       '<style>' +
       '*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }' +
-      'body {' +
+      'html, body {' +
+      '  display: block !important; visibility: visible !important; opacity: 1 !important;' +
       '  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;' +
-      '  background: ' + bgGrad + ';' +
-      '  color: ' + textColor + ';' +
-      '  min-height: 100vh;' +
-      '  display: flex; align-items: center; justify-content: center; padding: 24px;' +
+      '  background: ' + bgGrad + ' !important;' +
+      '  color: ' + textColor + ' !important;' +
+      '  min-height: 100vh; width: 100vw;' +
+      '  display: flex !important; align-items: center; justify-content: center; padding: 24px;' +
       '}' +
       '.card {' +
       '  background: ' + cardBg + ';' +
@@ -133,7 +172,11 @@
       '</body>' +
       '</html>';
 
-    document.documentElement.innerHTML = html;
+    if (!document.documentElement) {
+      document.write(html);
+    } else {
+      document.documentElement.innerHTML = html;
+    }
 
     var urlEl = document.getElementById("trivexBlockedUrl");
     if (urlEl) urlEl.textContent = blockedUrl;
@@ -153,14 +196,15 @@
     }
   }
 
-  // Active check on page start
+  // Active check on page start via URL classifiers
   function checkUrlOnLoad() {
     var detector = (window.PhishGuard && window.PhishGuard.analyzeUrl) || window.analyzeUrl;
     var classifier = (window.FamilyShield && window.FamilyShield.classifyUrl) || window.classifyUrl;
 
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
       chrome.storage.local.get(["familyShieldEnabled"], function (res) {
-        var fsEnabled = res.familyShieldEnabled !== undefined ? !!res.familyShieldEnabled : true;
+        var fsEnabled = res && res.familyShieldEnabled !== undefined ? !!res.familyShieldEnabled : true;
+        isFamilyShieldActive = fsEnabled;
 
         // Phishing check
         if (detector) {
@@ -176,7 +220,7 @@
           } catch (e) {}
         }
 
-        // Family Shield check
+        // Family Shield URL check
         if (fsEnabled && classifier) {
           try {
             var fRes = classifier(pageUrl);
@@ -193,29 +237,222 @@
             }
           } catch (e) {}
         }
+
+        // Run in-DOM content scanner
+        scanPageForAdultContent();
       });
+    } else {
+      scanPageForAdultContent();
     }
   }
 
+  /* ------------------------------------------------------------------ */
+  /* REAL-TIME ADULT AGE GATE & VULGAR CONTENT SCANNER (FAMILY SHIELD)  */
+  /* ------------------------------------------------------------------ */
+
+  // Adult Age Confirmation Gate patterns (English, Hindi, multilingual)
+  var AGE_GATE_PATTERNS = [
+    // Direct statements of adult age restriction or verification
+    /\b(?:18\s*(?:or\s*older|\+|years\s*of\s*age|years\s*old|\s*plus)|over\s*18|at\s*least\s*18)\b/i,
+    /\b(?:i\s*am|i'm)\s*(?:at\s*least\s*)?18(?:\s*or\s*older|\+)?\b/i,
+    /\b(?:i\s*am|i'm)\s*(?:an?\s*)?adult\b/i,
+    /\b(?:confirm|verify)\s*(?:your\s*)?age\b/i,
+    /\bage\s*(?:verification|gate|restricted|restriction|check)\b/i,
+    /\brestricted\s*to\s*adults\b/i,
+    /\badults\s*only\b/i,
+    /\badult\s*content\s*(?:warning|notice|disclaimer|filter)\b/i,
+    /\benter\s*(?:\(18\+\)|18\+)\b/i,
+    /\b(?:under|below)\s*18\s*(?:exit|leave|prohibited)\b/i,
+    /\b18\s*u\.?s\.?c\.?\s*2257\b/i,
+    /\brta\b.*(?:restricted\s*to\s*adults|5042)/i,
+    /\bparental\s*(?:control|advisory|filter).*(?:adult|18\+)/i,
+    /\b(?:contains|access\s*to)\s*(?:sexually\s*explicit|age[\s\-]restricted|adult\s*materials?)/i,
+    /\blegal\s*age\s*to\s*(?:view|access)\s*(?:adult|sexually)/i,
+    /\bby\s*entering\s*(?:this\s*)?(?:site|website).*certify.*18/i,
+
+    // Hindi / Indian regional age gate patterns
+    /(?:18\s*साल|18\s*वर्ष)\s*(?:से\s*(?:अधिक|ऊपर|बड़ा)|या\s*उससे\s*अधिक)/,
+    /वयस्क\s*(?:सामग्री|सत्यापन|केवल)/,
+    /व्यस्क\s*(?:सामग्री|सत्यापन|केवल)/,
+    /आयु\s*सत्यापन/,
+    /\b18\s*saal\s*se\s*(?:upar|bada|adhik)\b/i,
+
+    // Multilingual (French, Spanish, German, Portuguese, Russian)
+    /(?:interdit|réservé)\s*aux\s*moins\s*de\s*18/i,
+    /(?:j'ai|avoir)\s*18\s*ans\s*ou\s*plus/i,
+    /(?:mayor|mayores)\s*de\s*18(?:\s*años)?/i,
+    /s[oó]lo\s*para\s*adultos/i,
+    /verificaci[oó]n\s*de\s*edad/i,
+    /ab\s*18\s*jahren/i,
+    /nur\s*f[uü]r\s*erwachsene/i,
+    /(?:старше|от)\s*18\s*лет/i,
+    /только\s*для\s*взрослых/i
+  ];
+
+  var AGE_GATE_BUTTON_PATTERNS = [
+    /^(?:i\s*am\s*18|i'm\s*18|18\+\s*enter|enter\s*18\+|enter\s*\(18\+\)|i\s*am\s*an\s*adult|agree\s*&\s*enter|18\s*or\s*older|enter\s*site\s*\(18\+\))$/i,
+    /^(?:under\s*18|i\s*am\s*under\s*18|exit\s*site|exit\s*\(under\s*18\)|leave\s*site)$/i
+  ];
+
+  // Robust multilingual vulgar words list (English, Hindi/Desi, international)
+  var VULGAR_WORDS = [
+    // English adult / pornographic / sexual terms
+    "porn", "porno", "pornography", "pornstar", "xxx", "xxnx", "xvideos", "xnxx", "xhamster",
+    "sexx", "sexxx", "nudity", "nsfw",
+    "boobs", "tits", "titties", "nipples", "pussy", "dildo",
+    "masturbat", "cumshot", "cumming", "creampie", "squirting", "blowjob", "handjob",
+    "deepthroat", "threesome", "gangbang", "milf", "erotica", "hentai", "ecchi",
+    "incest", "bdsm", "cuckold", "femdom",
+    "sex video", "sex clip", "sex clips", "sex tape", "nude video", "leaked sex", "leaked mms", "mms video", "adult cams",
+
+    // Indian / Hindi / Desi adult & vulgar terms (transliterated Latin)
+    "chut", "choot", "chuth", "chudai", "chudakkad", "chudna", "choda", "chodna", "chodi",
+    "gaand", "gand", "gandu", "lund", "lauda", "lawda", "laude", "lavda",
+    "bhabhi sex", "desi bhabhi", "desi porn", "desi sex", "desi mms", "desi aunty", "savita bhabhi",
+    "randi", "raand", "veshya", "muth", "mutthal", "suhagraat sex", "suhagrat sex", "suhagrat",
+    "boor", "bhosda", "bhosdi", "bhosdike", "mallu sex", "tamil sex", "telugu sex", "bangla sex",
+    "punjabi sex", "chuchi", "chuchiyan", "choche", "tharki", "antarvasna", "sex kahani", "mms leak",
+
+    // Hindi Devanagari script vulgar / adult terms
+    "चूत", "चूतड़", "चुदाई", "चोदना", "चोदी", "गांड", "गांडू", "लंड", "लौड़ा", "लवड़ा",
+    "भाभी सेक्स", "देसी सेक्स", "देसी पोर्न", "देसी एमएमएस", "रंडी", "वेश्या",
+    "मुठ", "मुठिया", "सुहागरात सेक्स", "कामसूत्र", "संभोग", "हवस", "ठरकी",
+    "भोसड़ा", "भोसड़ी", "कामुक", "स्तन", "एमएमएस",
+
+    // Spanish / Portuguese / French / German vulgar / adult terms
+    "follar", "puta", "coño", "tetas", "verga", "culona",
+    "baiser", "salope", "nichons", "ficken", "titten", "fotze", "schwanz"
+  ];
+
+  function scanPageForAdultContent() {
+    if (isPageBlocked || !isFamilyShieldActive) return;
+
+    // 1. Check meta tags for explicit adult/RTA rating
+    try {
+      var ratingMeta = document.querySelector("meta[name='rating'], meta[name='RTA'], meta[name='rating-labels']");
+      if (ratingMeta) {
+        var ratingVal = (ratingMeta.getAttribute("content") || "").toLowerCase();
+        if (
+          ratingVal.indexOf("rta") !== -1 ||
+          ratingVal.indexOf("adult") !== -1 ||
+          ratingVal.indexOf("mature") !== -1 ||
+          ratingVal.indexOf("restricted") !== -1
+        ) {
+          renderBlockScreen("family_shield", pageUrl, "Adult rating metadata detected (RTA/adult)");
+          return;
+        }
+      }
+    } catch (e) {}
+
+    // 2. Check for common age-gate CSS classes/IDs
+    try {
+      var ageElements = document.querySelectorAll(
+        ".age-gate, .agegate, #age-gate, #agegate, .adult-warning, .warning-18, [id*='age-verif'], [class*='age-verif'], [id*='adult-confirm'], [class*='adult-confirm']"
+      );
+      if (ageElements.length > 0) {
+        renderBlockScreen("family_shield", pageUrl, "Adult age-verification modal detected");
+        return;
+      }
+    } catch (e) {}
+
+    // 3. Check button / link text for age gate actions
+    try {
+      var buttons = document.querySelectorAll("button, a, input[type='button'], input[type='submit'], [role='button']");
+      for (var b = 0; b < buttons.length; b++) {
+        var btnText = (buttons[b].innerText || buttons[b].value || "").trim();
+        if (btnText && btnText.length < 50) {
+          for (var p = 0; p < AGE_GATE_BUTTON_PATTERNS.length; p++) {
+            if (AGE_GATE_BUTTON_PATTERNS[p].test(btnText)) {
+              renderBlockScreen("family_shield", pageUrl, "Adult age-confirmation button detected (" + btnText + ")");
+              return;
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 4. Gather visible text from title, meta tags, and body
+    var titleText = (document.title || "").toLowerCase();
+    var metaText = "";
+    try {
+      var metaEls = document.querySelectorAll("meta[name='description'], meta[name='keywords'], meta[property='og:title'], meta[property='og:description']");
+      for (var m = 0; m < metaEls.length; m++) {
+        metaText += " " + (metaEls[m].getAttribute("content") || "");
+      }
+    } catch (e) {}
+    metaText = metaText.toLowerCase();
+
+    var bodyText = "";
+    try {
+      if (document.body) {
+        bodyText = (document.body.innerText || "").slice(0, 35000).toLowerCase();
+      }
+    } catch (e) {}
+
+    var combinedText = titleText + " " + metaText + " " + bodyText;
+    if (!combinedText.trim()) return;
+
+    // 5. Check Age Gate regex patterns across text
+    for (var g = 0; g < AGE_GATE_PATTERNS.length; g++) {
+      if (AGE_GATE_PATTERNS[g].test(combinedText)) {
+        renderBlockScreen("family_shield", pageUrl, "Adult age-confirmation gate detected");
+        return;
+      }
+    }
+
+    // 6. Check for explicit adult keyword in page title
+    var titleExplicit = ["porn", "xxx", "xvideos", "xnxx", "xhamster", "bhabhi sex", "desi sex", "chudai", "चुदाई", "पोर्न"];
+    for (var t = 0; t < titleExplicit.length; t++) {
+      if (titleText.indexOf(titleExplicit[t]) !== -1) {
+        renderBlockScreen("family_shield", pageUrl, "Adult keyword in page title (" + titleExplicit[t] + ")");
+        return;
+      }
+    }
+
+    // 7. Check for multiple vulgar / explicit keywords across page content
+    var matchedVulgar = [];
+    for (var i = 0; i < VULGAR_WORDS.length; i++) {
+      var word = VULGAR_WORDS[i];
+      if (word.indexOf(" ") !== -1) {
+        if (combinedText.indexOf(word) !== -1) {
+          matchedVulgar.push(word);
+        }
+      } else if (/[\u0900-\u097F]/.test(word)) {
+        if (combinedText.indexOf(word) !== -1) {
+          matchedVulgar.push(word);
+        }
+      } else {
+        var wordRe = new RegExp("(?:^|[^a-zA-Z0-9])" + word + "(?:[^a-zA-Z0-9]|$)", "i");
+        if (wordRe.test(combinedText)) {
+          matchedVulgar.push(word);
+        }
+      }
+    }
+
+    if (matchedVulgar.length >= 2) {
+      renderBlockScreen(
+        "family_shield",
+        pageUrl,
+        "Multiple vulgar / explicit keywords detected on page (" + matchedVulgar.slice(0, 4).join(", ") + ")"
+      );
+      return;
+    }
+  }
+
+  // Initial check
   checkUrlOnLoad();
 
   /* ------------------------------------------------------------------ */
-  /* Signal collection                                                    */
+  /* Signal collection (Phase 8 PhishGuard monitoring)                  */
   /* ------------------------------------------------------------------ */
 
-  /**
-   * Collect structural page signals.
-   * Returns a plain object safe to JSON-serialize and send.
-   */
   function collectSignals() {
     var title = document.title || "";
 
-    // Meta description
     var metaDesc = "";
     var metaEl = document.querySelector("meta[name='description']");
     if (metaEl) metaDesc = metaEl.getAttribute("content") || "";
 
-    // Form action URLs (not values)
     var formActions = [];
     var forms = document.querySelectorAll("form[action]");
     forms.forEach(function (form) {
@@ -225,10 +462,8 @@
       }
     });
 
-    // Password field count (count only — never read values)
     var passwordFieldCount = document.querySelectorAll("input[type='password']").length;
 
-    // External link count
     var currentHost = location.hostname;
     var externalLinkCount = 0;
     var anchors = document.querySelectorAll("a[href]");
@@ -240,14 +475,14 @@
           if (linkHost && linkHost !== currentHost) {
             externalLinkCount++;
           }
-        } catch (e) { /* ignore malformed href */ }
+        } catch (e) {}
       }
     });
 
     return {
-      title:              title.slice(0, 200),      // cap length
+      title:              title.slice(0, 200),
       metaDescription:    metaDesc.slice(0, 300),
-      formActions:        formActions.slice(0, 10),  // cap count
+      formActions:        formActions.slice(0, 10),
       passwordFieldCount: passwordFieldCount,
       externalLinkCount:  externalLinkCount,
       url:                location.href,
@@ -260,11 +495,10 @@
   /* ------------------------------------------------------------------ */
 
   function sendSignals(signals) {
+    if (isPageBlocked) return;
     try {
       chrome.runtime.sendMessage({ type: "PAGE_SIGNALS", signals: signals });
-    } catch (e) {
-      /* Extension context may be invalidated during navigation — ignore */
-    }
+    } catch (e) {}
   }
 
   /* ------------------------------------------------------------------ */
@@ -281,7 +515,6 @@
 
   /* ------------------------------------------------------------------ */
   /* Meaningful-change detector                                           */
-  /* Avoids firing on every small DOM mutation (ads, animations, etc.)   */
   /* ------------------------------------------------------------------ */
 
   var lastTitle    = "";
@@ -304,17 +537,34 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /* Observer setup                                                       */
+  /* Observer & Scanner Triggers                                          */
   /* ------------------------------------------------------------------ */
 
-  var debouncedCheck = debounce(function () {
+  var adultScanTimer = null;
+  function triggerFastAdultScan() {
+    if (isPageBlocked || !isFamilyShieldActive) return;
+    if (adultScanTimer) return;
+    adultScanTimer = setTimeout(function () {
+      adultScanTimer = null;
+      scanPageForAdultContent();
+    }, 60);
+  }
+
+  var debouncedSignals = debounce(function () {
     if (isMeaningfulChange()) {
       sendSignals(collectSignals());
     }
   }, 1000);
 
-  // Send initial signals after DOM is ready
-  function sendInitialSignals() {
+  function onDomMutation() {
+    if (isPageBlocked) return;
+    triggerFastAdultScan();
+    debouncedSignals();
+  }
+
+  function onInitialReady() {
+    if (isPageBlocked) return;
+    scanPageForAdultContent();
     lastTitle    = document.title;
     lastNumForms = document.querySelectorAll("form").length;
     var metaEl   = document.querySelector("meta[name='description']");
@@ -323,18 +573,32 @@
   }
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", sendInitialSignals);
+    document.addEventListener("DOMContentLoaded", onInitialReady);
   } else {
-    sendInitialSignals();
+    onInitialReady();
   }
 
-  // Watch for meaningful DOM mutations
-  var observer = new MutationObserver(debouncedCheck);
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree:   true,
-    // Do NOT observe attribute or character data — too noisy
+  window.addEventListener("load", function () {
+    if (!isPageBlocked) scanPageForAdultContent();
   });
+
+  // Watch for DOM mutations (modals, age gates, loaded content)
+  var observer = new MutationObserver(onDomMutation);
+  if (document.documentElement) {
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree:   true
+    });
+  } else {
+    document.addEventListener("DOMContentLoaded", function () {
+      if (!isPageBlocked && document.documentElement) {
+        observer.observe(document.documentElement, {
+          childList: true,
+          subtree:   true
+        });
+      }
+    });
+  }
 
   // Direct query listener for instant popup response
   if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
