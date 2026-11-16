@@ -5,9 +5,26 @@
 "use strict";
 
 try {
-  importScripts("blocklist.js", "detector.js", "family_shield.js");
+  importScripts(
+    "blocklist.js",
+    "ml/feature_extractor.js",
+    "ml/lightgbm_runtime.js",
+    "ml/model_loader.js",
+    "ml/system_c_v2.js",
+    "detector.js",
+    "family_shield.js"
+  );
 } catch (e) {
   console.error("TriVex: importScripts failed:", e);
+}
+
+// Pre-load and cache local ML model in service worker on start
+if (self.TriVexModelLoader && typeof self.TriVexModelLoader.loadModelAssets === "function") {
+  self.TriVexModelLoader.loadModelAssets().then(function (assets) {
+    console.log("TriVex: System C v2 ML model initialized in service worker:", assets.status);
+  }).catch(function (err) {
+    console.warn("TriVex: Background ML initialization deferred:", err);
+  });
 }
 
 /* ------------------------------------------------------------------ */

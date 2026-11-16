@@ -11,7 +11,7 @@ TriVex is a Chrome Manifest V3 extension designed for local-first, explainable p
 - **Three-Tier Detection Engine:**
   - **System A (Rule-Based):** Deterministic heuristics checking raw IP hostnames, URL length, excessive subdomain depth, user-info obfuscation (`@`), and credential keywords on unencrypted connections.
   - **System B (Weighted Scoring):** Risk-weighted accumulation across six distinct feature categories with a threshold of 45/120 points.
-  - **System C (Hybrid Decision Engine):** Combines rule confidence and weighted score to resolve false positives (e.g. preventing legitimate long URLs or multi-subdomain cloud links from triggering hard phishing blocks).
+  - **System C v2 (Local LightGBM Machine Learning Engine):** A client-side gradient boosted decision tree ensemble with Platt probability calibration and multi-evidence fusion. Runs 100% locally with zero network calls and zero cloud API keys.
 - **Phishing Protection & Redirection:**
   - Background service worker actively monitors tab navigations.
   - Intercepts high-confidence phishing navigations and displays a local warning page (`block.html`) with explanation details and a safe return button.

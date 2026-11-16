@@ -1,0 +1,73 @@
+{
+  "model_name": "TriVex System C v2 LightGBM",
+  "model_version": "2.0.0",
+  "schema_version": "2.0.0",
+  "model_type": "LightGBM Binary GBDT",
+  "model_status": "EXPERIMENTAL",
+  "dataset_version": "1.1.0",
+  "feature_count": 38,
+  "features": [
+    "url_length",
+    "host_length",
+    "path_length",
+    "query_length",
+    "num_query_params",
+    "special_char_count",
+    "has_at_symbol",
+    "hyphen_count_total",
+    "hyphen_count_host",
+    "percent_encoding_count",
+    "digit_ratio_url",
+    "digit_ratio_host",
+    "is_ip_host",
+    "dot_count_host",
+    "subdomain_depth",
+    "host_entropy",
+    "is_punycode",
+    "has_suspicious_port",
+    "is_suspicious_tld",
+    "has_kw_login",
+    "has_kw_verify",
+    "has_kw_account",
+    "has_kw_update",
+    "has_kw_banking",
+    "has_kw_secure",
+    "has_kw_password",
+    "has_kw_auth",
+    "total_phish_token_count",
+    "path_entropy",
+    "has_file_extension",
+    "has_fragment",
+    "no_https",
+    "has_page_signals",
+    "password_input_count",
+    "cross_origin_form_count",
+    "external_link_ratio",
+    "sys_a_score_norm",
+    "sys_b_score_norm"
+  ],
+  "calibration": {
+    "method": "platt_sigmoid",
+    "parameters": {
+      "A": -68.094183,
+      "B": 8.52106,
+      "formula": "1 / (1 + exp(A * raw_margin + B))"
+    }
+  },
+  "metrics_summary": {
+    "test_accuracy": 0.4231,
+    "test_f1": 0.5946,
+    "test_roc_auc": 1.0,
+    "test_brier_calibrated": 0.0
+  },
+  "decision_thresholds": {
+    "allow_max_prob": 0.2,
+    "caution_max_prob": 0.7,
+    "warning_max_prob": 0.95,
+    "block_min_prob": 0.95
+  },
+  "checksums": {
+    "phishing_model_sha256": "1a2421d3521d53e663f8905e88abfd242bf86cff2f0e409822873fb8d2a514f8",
+    "calibration_sha256": "95daf9021f4c036484c9eb7a5f7efa843ac7c5f2c3fff47a056e30a8fa3ec1b9"
+  }
+}

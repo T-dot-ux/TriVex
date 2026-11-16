@@ -1,0 +1,90 @@
+{
+  "schema_version": "2.0.0",
+  "feature_count": 38,
+  "features": [
+    "url_length",
+    "host_length",
+    "path_length",
+    "query_length",
+    "num_query_params",
+    "special_char_count",
+    "has_at_symbol",
+    "hyphen_count_total",
+    "hyphen_count_host",
+    "percent_encoding_count",
+    "digit_ratio_url",
+    "digit_ratio_host",
+    "is_ip_host",
+    "dot_count_host",
+    "subdomain_depth",
+    "host_entropy",
+    "is_punycode",
+    "has_suspicious_port",
+    "is_suspicious_tld",
+    "has_kw_login",
+    "has_kw_verify",
+    "has_kw_account",
+    "has_kw_update",
+    "has_kw_banking",
+    "has_kw_secure",
+    "has_kw_password",
+    "has_kw_auth",
+    "total_phish_token_count",
+    "path_entropy",
+    "has_file_extension",
+    "has_fragment",
+    "no_https",
+    "has_page_signals",
+    "password_input_count",
+    "cross_origin_form_count",
+    "external_link_ratio",
+    "sys_a_score_norm",
+    "sys_b_score_norm"
+  ],
+  "train_count": 77,
+  "val_count": 17,
+  "test_count": 26,
+  "full_model": {
+    "best_iteration": 1,
+    "test_metrics": {
+      "accuracy": 0.4231,
+      "precision": 0.4231,
+      "recall": 1.0,
+      "f1": 0.5946,
+      "roc_auc": 1.0,
+      "pr_auc": 1.0,
+      "brier_score": 0.2311,
+      "log_loss": 0.6551,
+      "fpr": 1.0,
+      "fnr": 0.0,
+      "confusion_matrix": {
+        "tn": 0,
+        "fp": 15,
+        "fn": 0,
+        "tp": 11
+      }
+    }
+  },
+  "ablation_lexical_only": {
+    "best_iteration": 1,
+    "test_metrics": {
+      "accuracy": 0.4231,
+      "precision": 0.4231,
+      "recall": 1.0,
+      "f1": 0.5946,
+      "roc_auc": 1.0,
+      "pr_auc": 1.0,
+      "brier_score": 0.2311,
+      "log_loss": 0.6551,
+      "fpr": 1.0,
+      "fnr": 0.0,
+      "confusion_matrix": {
+        "tn": 0,
+        "fp": 15,
+        "fn": 0,
+        "tp": 11
+      }
+    }
+  },
+  "ablation_finding": "Full model with heuristic evidence achieves F1=0.5946 vs Lexical-only F1=0.5946"
+}

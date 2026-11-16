@@ -497,9 +497,28 @@
       mark.style.left = Math.min(100, (threshVal / maxVal) * 100) + "%";
     }
 
-    // System C
-    setPill($("verdictC"), sysC.verdict);
-    fillList($("reasonsC"), sysC.reasons);
+    // System C / System C v2
+    var sysCv2 = r.systemCv2;
+    var cVerdict = (sysCv2 && sysCv2.finalVerdict) ? sysCv2.finalVerdict : sysC.verdict;
+    setPill($("verdictC"), cVerdict);
+
+    var reasonsToDisplay = (sysCv2 && Array.isArray(sysCv2.reasons)) ? sysCv2.reasons : sysC.reasons;
+    fillList($("reasonsC"), reasonsToDisplay);
+
+    var mlRow = $("mlProbRow");
+    var mlProbText = $("mlProbText");
+    var mlBadge = $("mlStatusBadge");
+    if (mlRow && mlProbText && mlBadge) {
+      if (sysCv2 && typeof sysCv2.phishingProbability === "number") {
+        mlRow.style.display = "flex";
+        var pct = Math.round(sysCv2.phishingProbability * 100);
+        mlProbText.textContent = pct + "% (" + (sysCv2.riskLevel || "standard") + ")";
+        mlBadge.textContent = "LightGBM " + (sysCv2.modelStatus || "Local");
+        mlBadge.className = "pill " + (pct >= 70 ? "flagged" : (pct >= 20 ? "caution" : "clean"));
+      } else {
+        mlRow.style.display = "none";
+      }
+    }
 
     // Six features list
     var list = $("featureList");

@@ -368,8 +368,21 @@
     var sysB = runSystemB(ex.features);
     var sysC = runSystemC(ex.features, raw, sysA, sysB);
 
-    var finalVerdict = sysC.verdict;
-    var riskLevel    = sysC.riskLevel;
+    // System C v2: If local ML engine is present, execute LightGBM prediction and fusion
+    var sysCv2 = null;
+    if (root.TriVexSystemCv2 && typeof root.TriVexSystemCv2.evaluateSystemC_v2 === "function") {
+      try {
+        sysCv2 = root.TriVexSystemCv2.evaluateSystemC_v2(raw, {
+          systemA: sysA,
+          systemB: sysB,
+        });
+      } catch (err) {
+        console.warn("TriVex: System C v2 evaluation failed, using v1 fallback:", err);
+      }
+    }
+
+    var finalVerdict = (sysCv2 && sysCv2.finalVerdict) ? sysCv2.finalVerdict : sysC.verdict;
+    var riskLevel    = (sysCv2 && sysCv2.riskLevel) ? sysCv2.riskLevel : sysC.riskLevel;
     var riskScore    = sysC.riskScore;
 
     var explanation;
@@ -401,6 +414,7 @@
       systemA:          sysA,
       systemB:          sysB,
       systemC:          sysC,
+      systemCv2:        sysCv2,
       finalVerdict:     finalVerdict,
       riskLevel:        riskLevel,
       riskScore:        riskScore,

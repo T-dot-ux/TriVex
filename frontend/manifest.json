@@ -29,6 +29,10 @@
       "matches": ["http://*/*", "https://*/*"],
       "js": [
         "scripts/blocklist.js",
+        "scripts/ml/feature_extractor.js",
+        "scripts/ml/lightgbm_runtime.js",
+        "scripts/ml/model_loader.js",
+        "scripts/ml/system_c_v2.js",
         "scripts/detector.js",
         "scripts/family_shield.js",
         "scripts/content.js"
@@ -43,7 +47,10 @@
         "family_shield.html",
         "privacy.html",
         "scripts/block.js",
-        "scripts/family_shield_page.js"
+        "scripts/family_shield_page.js",
+        "models/model_manifest.json",
+        "models/phishing_model.json",
+        "models/calibration.json"
       ],
       "matches": ["<all_urls>"]
     }

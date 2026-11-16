@@ -85,8 +85,12 @@
 
     <div class="detector" id="cardC">
       <div class="detector-head">
-        <span class="detector-name">System C &middot; Hybrid Decision</span>
+        <span class="detector-name">System C v2 &middot; Local ML Engine</span>
         <span class="pill" id="verdictC"></span>
+      </div>
+      <div class="ml-prob-row" id="mlProbRow" style="margin-top:6px; font-size:12px; color:#94a3b8; display:none;">
+        <span>Phishing Probability: <strong id="mlProbText" style="color:#f8fafc;"></strong></span>
+        <span class="pill" id="mlStatusBadge" style="font-size:10px; margin-left:6px;"></span>
       </div>
       <ul class="reasons" id="reasonsC"></ul>
     </div>
@@ -131,6 +135,10 @@
     <div><a href="privacy.html" target="_blank" rel="noopener">Privacy information &amp; permissions</a></div>
   </footer>
 
+  <script src="scripts/ml/feature_extractor.js"></script>
+  <script src="scripts/ml/lightgbm_runtime.js"></script>
+  <script src="scripts/ml/model_loader.js"></script>
+  <script src="scripts/ml/system_c_v2.js"></script>
   <script src="scripts/detector.js"></script>
   <script src="scripts/family_shield.js"></script>
   <script src="scripts/popup.js"></script>

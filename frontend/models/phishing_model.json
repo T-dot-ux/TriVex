@@ -1,0 +1,59 @@
+{
+  "model_type": "lightgbm_gbdt",
+  "num_trees": 1,
+  "base_score": 0.0,
+  "trees": [
+    {
+      "tree_index": 0,
+      "shrinkage": 1.0,
+      "root": {
+        "is_leaf": false,
+        "feature_index": 31,
+        "feature_name": "no_https",
+        "threshold": 1.0000000180025095e-35,
+        "default_left": true,
+        "left": {
+          "is_leaf": false,
+          "feature_index": 15,
+          "feature_name": "host_entropy",
+          "threshold": 3.027099967002869,
+          "default_left": true,
+          "left": {
+            "is_leaf": true,
+            "leaf_value": 0.023108682639866332
+          },
+          "right": {
+            "is_leaf": false,
+            "feature_index": 0,
+            "feature_name": "url_length",
+            "threshold": 22.500000000000004,
+            "default_left": true,
+            "left": {
+              "is_leaf": true,
+              "leaf_value": 0.023108682639866443
+            },
+            "right": {
+              "is_leaf": false,
+              "feature_index": 0,
+              "feature_name": "url_length",
+              "threshold": 52.50000000000001,
+              "default_left": true,
+              "left": {
+                "is_leaf": true,
+                "leaf_value": 0.023108682639866346
+              },
+              "right": {
+                "is_leaf": true,
+                "leaf_value": 0.0231086826398664
+              }
+            }
+          }
+        },
+        "right": {
+          "is_leaf": true,
+          "leaf_value": 0.22395556391475413
+        }
+      }
+    }
+  ]
+}
