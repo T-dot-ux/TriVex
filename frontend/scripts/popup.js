@@ -574,6 +574,11 @@
       return;
     }
 
+    // Auto-normalize bare domain names without protocol scheme
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(targetUrl)) {
+      targetUrl = "https://" + targetUrl;
+    }
+
     // Evaluate Family Shield classification if enabled
     var shieldRes = null;
     if (isFamilyShieldEnabled) {

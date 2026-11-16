@@ -35,24 +35,24 @@
    * Keys match the feature object returned by extractFeatures().
    */
   var FEATURE_WEIGHTS = {
-    hostname_is_ip:      35,
-    suspicious_symbols:  30,
-    hostname_dot_count:  20,
-    keyword_match:       15,
-    url_length:          10,
-    uses_https:          10,   // weight is for the ABSENCE of https (noHttps flag)
+    hostname_is_ip: 35,
+    suspicious_symbols: 30,
+    hostname_dot_count: 20,
+    keyword_match: 15,
+    url_length: 10,
+    uses_https: 10,   // weight is for the ABSENCE of https (noHttps flag)
   };
 
   /**
    * Human-readable labels for each feature (used in popup and reports).
    */
   var FEATURE_LABELS = {
-    hostname_is_ip:     "IP address used as hostname",
+    hostname_is_ip: "IP address used as hostname",
     suspicious_symbols: "Suspicious symbols (@ or multiple hyphens)",
     hostname_dot_count: "Excessive subdomain depth (more than 3 dots)",
-    keyword_match:      "Targeted keyword in URL",
-    url_length:         "URL longer than 75 characters",
-    uses_https:         "HTTPS absent (plain HTTP)",
+    keyword_match: "Targeted keyword in URL",
+    url_length: "URL longer than 75 characters",
+    uses_https: "HTTPS absent (plain HTTP)",
   };
 
   /** Phishing-related keywords to match anywhere in the full URL. */
@@ -101,7 +101,7 @@
 
     // Count hyphens and dots only in the hostname (not in the path / query)
     var hyphenCount = (hostname.match(/-/g) || []).length;
-    var dotCount    = (hostname.match(/\./g) || []).length;
+    var dotCount = (hostname.match(/\./g) || []).length;
 
     var matched = KEYWORDS.filter(function (kw) {
       return lowerUrl.indexOf(kw) !== -1;
@@ -111,12 +111,12 @@
 
     return {
       features: {
-        hostname_is_ip:     isIpHostname(hostname),
+        hostname_is_ip: isIpHostname(hostname),
         suspicious_symbols: rawUrl.indexOf("@") !== -1 || hyphenCount >= 2,
         hostname_dot_count: dotCount > 3,
-        keyword_match:      matched.length > 0,
-        url_length:         rawUrl.length > 75,
-        uses_https:         noHttps,          // true = suspicious (no HTTPS)
+        keyword_match: matched.length > 0,
+        url_length: rawUrl.length > 75,
+        uses_https: noHttps,          // true = suspicious (no HTTPS)
       },
       matchedKeywords: matched,
     };
@@ -163,16 +163,16 @@
    * @returns {{ score, maxScore, threshold, verdict, reasons }}
    */
   function runSystemB(f) {
-    var score   = 0;
+    var score = 0;
     var reasons = [];
 
     var featureWeightMap = [
-      { key: "hostname_is_ip",     label: "IP address in hostname",                weight: FEATURE_WEIGHTS.hostname_is_ip     },
-      { key: "suspicious_symbols", label: "Suspicious symbols (@ or 2+ hyphens)", weight: FEATURE_WEIGHTS.suspicious_symbols  },
-      { key: "hostname_dot_count", label: "Deep subdomains (>3 dots in hostname)", weight: FEATURE_WEIGHTS.hostname_dot_count  },
-      { key: "keyword_match",      label: "Targeted phishing keyword",             weight: FEATURE_WEIGHTS.keyword_match       },
-      { key: "url_length",         label: "Long URL (>75 chars)",                  weight: FEATURE_WEIGHTS.url_length          },
-      { key: "uses_https",         label: "HTTPS absent",                          weight: FEATURE_WEIGHTS.uses_https          },
+      { key: "hostname_is_ip", label: "IP address in hostname", weight: FEATURE_WEIGHTS.hostname_is_ip },
+      { key: "suspicious_symbols", label: "Suspicious symbols (@ or 2+ hyphens)", weight: FEATURE_WEIGHTS.suspicious_symbols },
+      { key: "hostname_dot_count", label: "Deep subdomains (>3 dots in hostname)", weight: FEATURE_WEIGHTS.hostname_dot_count },
+      { key: "keyword_match", label: "Targeted phishing keyword", weight: FEATURE_WEIGHTS.keyword_match },
+      { key: "url_length", label: "Long URL (>75 chars)", weight: FEATURE_WEIGHTS.url_length },
+      { key: "uses_https", label: "HTTPS absent", weight: FEATURE_WEIGHTS.uses_https },
     ];
 
     featureWeightMap.forEach(function (item) {
@@ -183,11 +183,11 @@
     });
 
     return {
-      score:    score,
+      score: score,
       maxScore: 120,
       threshold: THRESHOLD,
-      verdict:  score >= THRESHOLD ? "phishing" : "not_flagged",
-      reasons:  reasons,
+      verdict: score >= THRESHOLD ? "phishing" : "not_flagged",
+      reasons: reasons,
     };
   }
 
@@ -301,12 +301,12 @@
    */
   function emptyFeatures() {
     return {
-      hostname_is_ip:     false,
+      hostname_is_ip: false,
       suspicious_symbols: false,
       hostname_dot_count: false,
-      keyword_match:      false,
-      url_length:         false,
-      uses_https:         false,
+      keyword_match: false,
+      url_length: false,
+      uses_https: false,
     };
   }
 
@@ -340,6 +340,11 @@
       return { url: raw, validationStatus: "empty", error: "Please enter a URL." };
     }
 
+    // Auto-normalize bare domain names without protocol scheme
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw)) {
+      raw = "https://" + raw;
+    }
+
     var parsed;
     try {
       parsed = new URL(raw);
@@ -363,7 +368,7 @@
       return { url: raw, validationStatus: "no_hostname", error: "The URL has no hostname." };
     }
 
-    var ex   = extractFeatures(raw, parsed);
+    var ex = extractFeatures(raw, parsed);
     var sysA = runSystemA(ex.features);
     var sysB = runSystemB(ex.features);
     var sysC = runSystemC(ex.features, raw, sysA, sysB);
@@ -382,8 +387,8 @@
     }
 
     var finalVerdict = (sysCv2 && sysCv2.finalVerdict) ? sysCv2.finalVerdict : sysC.verdict;
-    var riskLevel    = (sysCv2 && sysCv2.riskLevel) ? sysCv2.riskLevel : sysC.riskLevel;
-    var riskScore    = sysC.riskScore;
+    var riskLevel = (sysCv2 && sysCv2.riskLevel) ? sysCv2.riskLevel : sysC.riskLevel;
+    var riskScore = sysC.riskScore;
 
     var explanation;
     var flagCount = [sysA, sysB, sysC].filter(function (s) {
@@ -406,23 +411,23 @@
     }
 
     return {
-      url:              raw,
-      hostname:         parsed.hostname,
+      url: raw,
+      hostname: parsed.hostname,
       validationStatus: "ok",
-      features:         ex.features,
-      matchedKeywords:  ex.matchedKeywords,
-      systemA:          sysA,
-      systemB:          sysB,
-      systemC:          sysC,
-      systemCv2:        sysCv2,
-      finalVerdict:     finalVerdict,
-      riskLevel:        riskLevel,
-      riskScore:        riskScore,
-      explanation:      explanation,
+      features: ex.features,
+      matchedKeywords: ex.matchedKeywords,
+      systemA: sysA,
+      systemB: sysB,
+      systemC: sysC,
+      systemCv2: sysCv2,
+      finalVerdict: finalVerdict,
+      riskLevel: riskLevel,
+      riskScore: riskScore,
+      explanation: explanation,
       // Backward-compat aliases so existing popup.js keeps working unchanged
-      ruleBased:        sysA,
-      weighted:         sysB,
-      hybrid:           sysC,
+      ruleBased: sysA,
+      weighted: sysB,
+      hybrid: sysC,
     };
   }
 
@@ -431,15 +436,15 @@
   /* ------------------------------------------------------------------ */
 
   var api = {
-    analyzeUrl:      analyzeUrl,
-    FEATURE_LABELS:  FEATURE_LABELS,
+    analyzeUrl: analyzeUrl,
+    FEATURE_LABELS: FEATURE_LABELS,
     FEATURE_WEIGHTS: FEATURE_WEIGHTS,
-    emptyFeatures:   emptyFeatures,
+    emptyFeatures: emptyFeatures,
   };
 
   // Browser global (popup.html script tag)
-  root.PhishGuard  = api;
-  root.analyzeUrl  = analyzeUrl;
+  root.PhishGuard = api;
+  root.analyzeUrl = analyzeUrl;
 
   // Node / CommonJS (evaluate.py interop via node runner, or Jest tests)
   if (typeof module !== "undefined" && module.exports) module.exports = api;

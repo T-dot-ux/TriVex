@@ -1,16 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>TriVex — PhishGuard AI</title>
   <link rel="stylesheet" href="styles/popup.css" />
 </head>
+
 <body>
   <header class="header">
     <img src="icons/icon32.png" alt="TriVex logo" width="28" height="28" />
     <div>
-      <h1>TriVex <span class="shield-badge" id="shieldBadge" aria-label="Family Shield active">🛡️ FAMILY SHIELD</span></h1>
+      <h1>TriVex <span class="shield-badge" id="shieldBadge" aria-label="Family Shield active">🛡️ FAMILY SHIELD</span>
+      </h1>
       <p class="subtitle">Explainable URL analysis &amp; protection. Local-first.</p>
     </div>
   </header>
@@ -20,8 +23,8 @@
     <div class="divider"><span>or</span></div>
     <label for="urlInput" class="label">Paste a URL</label>
     <div class="row">
-      <input id="urlInput" type="text" spellcheck="false" autocomplete="off"
-             placeholder="https://example.com/login" aria-describedby="error" />
+      <input id="urlInput" type="text" spellcheck="false" autocomplete="off" placeholder="https://example.com/login"
+        aria-describedby="error" />
       <button id="scanUrl" class="btn" type="button">Analyze URL</button>
     </div>
     <p id="error" class="error" role="alert" hidden></p>
@@ -143,4 +146,5 @@
   <script src="scripts/family_shield.js"></script>
   <script src="scripts/popup.js"></script>
 </body>
+
 </html>

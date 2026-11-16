@@ -343,6 +343,10 @@ def parse_url(raw_url: str):
 
     raw_url = raw_url.strip()
 
+    # Auto-normalize bare domain names without protocol scheme
+    if not re.match(r'^[a-zA-Z][a-zA-Z0-9+.-]*://', raw_url):
+        raw_url = "https://" + raw_url
+
     try:
         parsed = urlparse(raw_url)
     except Exception as exc:
@@ -379,6 +383,10 @@ def analyze_url(raw_url: str) -> AnalysisResult:
             url="", hostname="", validation_status="empty",
             error="Empty URL", final_verdict="",
         )
+
+    # Auto-normalize bare domain names without protocol scheme
+    if not re.match(r'^[a-zA-Z][a-zA-Z0-9+.-]*://', raw_url):
+        raw_url = "https://" + raw_url
 
     parsed, err = parse_url(raw_url)
     if err:
